@@ -1,3 +1,5 @@
 .pilot/
 __pycache__/
 *.pyc
+build/
+*.egg-info/

@@ -1,3 +1,0 @@
-[console_scripts]
-colab-pilot-runner = pilot.runner:main
-pilot = pilot.cli:main
