@@ -28,6 +28,7 @@ human only restarted runtimes.
    [`examples/colab_runner.ipynb`](examples/colab_runner.ipynb), set your repo names, run all.
 3. On the agent side:
    ```bash
+   git clone https://github.com/SergeyChere/colab-pilot && cd colab-pilot
    git clone -b pilot https://x-access-token:$GITHUB_TOKEN@github.com/you/mailbox .pilot
    echo 'nvidia-smi; python bench.py' | python pilot/cli.py send first -
    python pilot/cli.py wait first --follow
