@@ -13,6 +13,10 @@ notebook, run one cell, and later shut the runtime down.
                                                                                 └──────────────────────────┘
 ```
 
+The mailbox is the orphan branch `pilot` **of the user's own project repository** (created by
+whichever side comes first: `pilot init` or the notebook). One repository, one token, nothing else
+to set up.
+
 Why git and not a socket: no inbound ports, no tunnels, no proxy (all of these are restricted on
 Colab), every command and every result is versioned and reviewable, and the agent side needs nothing
 but `git` and a token that can write one private repository.
@@ -22,7 +26,7 @@ but `git` and a token that can write one private repository.
 | path | written by | meaning |
 |---|---|---|
 | `cmd/<job>.sh` | client | a job: a bash script, run once |
-| `cmd/STOP` | client | runner finishes the current job and exits |
+| `cmd/STOP` | client | holds the send time; stops runners started before it (a stale STOP never blocks a new runner) |
 | `out/<job>.log` | runner | stdout+stderr, pushed every `PUSH_S` seconds while running |
 | `out/<job>.done` | runner | JSON: exit code, seconds, start/end time, GPU |
 | `out/<job>/…` | job | any result files the job writes to `$PILOT_OUT` |
@@ -30,16 +34,27 @@ but `git` and a token that can write one private repository.
 
 Rules that make it conflict-free:
 - The client writes only `cmd/`, the runner writes only `out/`. Both always `pull --rebase`
-  before push; rebase never conflicts because the trees are disjoint.
+  before push; rebase never conflicts because the trees are disjoint. The runner rebases with
+  autostash, because the job log is still being written while new commands arrive.
 - A job is identified by its file name; it runs at most once (`out/<job>.done` exists → skip).
 - Jobs run in name order, one at a time (one GPU, no contention in measurements).
-- Job header lines configure it: `# timeout: 3600` (seconds), `# gpu: A100|L4|T4|any`
+- Job header lines configure it: `# branch: <name>`, `# timeout: 3600` (seconds), `# gpu: A100|L4|T4|any`
   (refuse to run on the wrong GPU and report it in `.done`).
 - Nobody merges `pilot` into `main`. It is a log, not code.
 
 ## 2. Runner (`pilot/runner.py`, notebook side)
 
-Loop: `pull → pick next job → run → push`, plus a heartbeat.
+Loop: `pull → pick next job → git pull the project → run → push`, plus a heartbeat.
+
+- **Same code as the agent.** `pilot send` adds `# branch: <agent's current branch>` to the job
+  (agents such as Claude Code usually work on their own branch, not `main`) and warns about
+  unpushed or uncommitted changes. Before each job the runner fetches and checks out
+  `origin/<branch>` (default: the remote default branch); the commit goes into the log and `.done`.
+- **Few commits while idle.** The heartbeat is pushed every `HEARTBEAT_S` (300 s) when idle and
+  with every log push while a job runs. `pilot status` treats a heartbeat older than 12 minutes as
+  a disconnected runtime and tells the agent what to ask the human.
+- **One-call start in Colab**: `colab_start("owner/repo")` reads the token from Colab secrets,
+  clones or updates the project in `/content/<repo>`, opens the mailbox, runs the loop.
 
 - **Process isolation.** Each job runs in its own process group (`setsid`). On timeout, STOP or a
   kernel interrupt the whole group is killed — a stray GPU process silently slowing the next
@@ -58,19 +73,25 @@ Loop: `pull → pick next job → run → push`, plus a heartbeat.
 ## 3. Client (`pilot/cli.py`, agent side)
 
 ```
+pilot init                       # open .pilot/ (branch pilot) in the current repo, create if needed
+pilot run <job> <script|->      # send + wait --follow
 pilot send <job> <script|->     # commit cmd/<job>.sh and push
 pilot wait <job> [--follow]     # poll until out/<job>.done; --follow prints new log lines
 pilot logs <job> [--tail N]
 pilot status                     # heartbeat: alive?, GPU, current job, queue
 pilot stop                       # write cmd/STOP
+pilot guide                      # print the agent guide
 ```
 
-All commands work on a local clone of the `pilot` branch (`PILOT_DIR`, default `.pilot`).
+All commands work on a local clone of the `pilot` branch (`PILOT_DIR`, default `<repo>/.pilot`,
+added to `.git/info/exclude`). Installed with `pip install git+https://github.com/SergeyChere/colab-pilot`.
 Exit code of `wait` = exit code of the job, so an agent can chain steps in plain shell.
 
 ## 4. AI integration
 
-The agent only needs shell access. `AGENTS.md` (also read by Claude Code via `CLAUDE.md`) tells it:
+The agent only needs shell and git access to the project (Claude Code already has both).
+The user says one sentence pointing at this repository; the agent installs the package and reads
+`pilot/guide.md` (`pilot guide`), which tells it:
 1. write the experiment as a self-contained script; every step appends a line to
    `$PILOT_OUT/results.csv` and the runner pushes it — a long session yields data even if it dies;
 2. `pilot send`, then `pilot wait --follow`; read logs, not guesses;
@@ -80,10 +101,10 @@ The agent only needs shell access. `AGENTS.md` (also read by Claude Code via `CL
 
 ## 5. Security
 
-- Token: GitHub fine-grained, **one repository**, Contents read/write only, stored in the notebook's
-  secret store (Colab secrets) and on the agent side as `GITHUB_TOKEN`. Never in the notebook text.
-- The runner executes whatever arrives in `cmd/` — so the mailbox repository must be private and
-  writable only by you and your agent. Treat it like an SSH key.
+- Token: GitHub fine-grained, **one repository**, Contents read/write only, stored only in Colab
+  secrets (`GH_TOKEN`). Never in the notebook text. The agent side uses its own git access.
+- The runner executes whatever arrives in `cmd/` — only trusted people and agents may have write
+  access to the repository. In a public repository the logs are public as well.
 - Redaction of secrets in logs (above); jobs get `COLAB_PILOT=1` to know where they run.
 
 ## 6. Platform policy
@@ -96,7 +117,7 @@ as a way around free-tier limits.
 
 ## 7. Roadmap
 
-- Backends: Kaggle notebooks, local Jupyter runtime, plain cloud VM (same runner, systemd unit).
+- Later, after Colab is solid: Kaggle, local Jupyter runtime, plain cloud VM.
 - `pilot bench`: repeat a job N times, report median and spread.
 - Artifacts larger than git likes: optional upload to a GCS/HF bucket, link in `.done`.
 - Several runners on one mailbox (job claiming via `out/<job>.claim` commits).
