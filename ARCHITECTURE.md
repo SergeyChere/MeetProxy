@@ -7,12 +7,26 @@ notebook, run one cell, and later shut the runtime down.
 
 Diagrams: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
-```
- ┌──────────────────────┐   git push cmd/*      ┌───────────────┐   git pull     ┌──────────────────────────┐
- │ AI agent (sandbox)   │ ───────────────────▶  │ GitHub branch │ ─────────────▶ │ runner.py in the notebook │
- │  pilot send / wait   │ ◀───────────────────  │   "pilot"     │ ◀───────────── │  runs job, streams log    │
- └──────────────────────┘   git pull out/*      └───────────────┘   git push out │  heartbeat, GPU info      │
-                                                                                └──────────────────────────┘
+```mermaid
+flowchart LR
+    A["🤖 AI agent · sandbox<br/>pilot send / wait"]
+    G["📦 GitHub · your repo<br/>branch pilot"]
+    R["⚡ runner.py in the notebook<br/>runs job, streams log<br/>heartbeat, GPU telemetry"]
+    A -- "git push cmd/*" --> G
+    G -. "git pull out/*" .-> A
+    G -. "git pull cmd/*" .-> R
+    R -- "git push out/*" --> G
+
+    classDef agent fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
+    classDef repo fill:#f4f0ff,stroke:#7a5af0,stroke-width:2px,color:#2a2244
+    classDef gpu fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
+    class A agent
+    class G repo
+    class R gpu
+    linkStyle 0 stroke:#3b6fd8,stroke-width:2px
+    linkStyle 1 stroke:#1f9d6b,stroke-width:2px
+    linkStyle 2 stroke:#3b6fd8,stroke-width:2px
+    linkStyle 3 stroke:#1f9d6b,stroke-width:2px
 ```
 
 The mailbox is the orphan branch `pilot` **of the user's own project repository** (created by

@@ -40,6 +40,13 @@ flowchart LR
     class A1,A2,A3 agent
     class C,O repo
     class R1,R2,R3,R4,R5 gpu
+    style AGENT fill:#f7f9fe,stroke:#3b6fd8,color:#23407e
+    style REPO fill:#faf8ff,stroke:#7a5af0,color:#3d2e7a
+    style GPU fill:#f6fcf9,stroke:#1f9d6b,color:#16704d
+    linkStyle 0,1 stroke:#3b6fd8
+    linkStyle 2,3,4,5 stroke:#1f9d6b
+    linkStyle 6,7 stroke:#3b6fd8,stroke-width:2.5px
+    linkStyle 8,9 stroke:#1f9d6b,stroke-width:2.5px
 ```
 
 **You:** open the notebook, *Run all* once, shut the runtime down when finished. Everything else is
@@ -68,6 +75,9 @@ flowchart TB
     class FLAG,HA agent
     class REP,HM human
     class S,RAW,SUM,DONE,HIST data
+    linkStyle 0,1,4 stroke:#9a948a
+    linkStyle 2,5 stroke:#3b6fd8,stroke-width:2px
+    linkStyle 3,6 stroke:#e0a020,stroke-width:2px
 ```
 
 | Level | Where | Who reads it |
@@ -96,26 +106,51 @@ work and answers in one short line:
 Neither side ever waits on the other: both just pull and push on timers.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"actorBkg": "#ffffff", "actorBorder": "#7a5af0", "actorTextColor": "#1f1d1a", "signalColor": "#4a463f", "signalTextColor": "#1f1d1a", "noteBkgColor": "#fff6e3", "noteBorderColor": "#e0a020", "noteTextColor": "#4a3510", "sequenceNumberColor": "#ffffff", "loopTextColor": "#4a463f", "labelBoxBkgColor": "#ffffff", "labelBoxBorderColor": "#b8b2a6"}}}%%
 sequenceDiagram
     autonumber
-    participant A as Agent (pilot)
-    participant G as GitHub · branch pilot
-    participant R as Runner (Colab)
-    loop idle: every 20 s (POLL_S)
-        R->>G: pull — any new cmd/*.sh?
+    box rgb(238,243,253) 🤖 Agent side
+        participant A as Agent (pilot)
     end
-    Note over R,G: heartbeat out/runner.json pushed every 5 min while idle
-    A->>G: pilot send — push cmd/s01.sh
-    R->>G: pull — finds s01
-    R->>R: check out your branch, run the job, sample the GPU
-    loop while running: every 45 s (PUSH_S)
-        R->>G: push log + results + heartbeat, pull (sees STOP)
+    box rgb(244,240,255) 📦 Your repo
+        participant G as GitHub · branch pilot
     end
-    loop pilot wait: every 20 s (--poll)
-        A->>G: pull — s01.done yet?
+    box rgb(238,250,244) ⚡ Colab GPU
+        participant R as Runner
     end
-    R->>G: push s01.done, history.csv, final heartbeat
-    A->>G: pull — reads .done, prints one gpu line
+
+    rect rgb(238,250,244)
+        loop idle: every 20 s (POLL_S)
+            R->>G: pull — any new cmd/*.sh?
+        end
+        Note over G,R: heartbeat out/runner.json pushed every 5 min while idle
+    end
+
+    rect rgb(238,243,253)
+        A->>G: pilot send — push cmd/s01.sh
+    end
+
+    rect rgb(238,250,244)
+        R->>G: pull — finds s01
+        R->>R: check out your branch, run the job, sample the GPU
+        loop while running: every 45 s (PUSH_S)
+            R->>G: push log + results + heartbeat, pull (sees STOP)
+        end
+    end
+
+    rect rgb(238,243,253)
+        loop pilot wait: every 20 s (--poll)
+            A->>G: pull — s01.done yet?
+        end
+    end
+
+    rect rgb(238,250,244)
+        R->>G: push s01.done, history.csv, final heartbeat
+    end
+
+    rect rgb(255,246,227)
+        A->>G: pull — reads .done, prints one gpu line
+    end
 ```
 
 **Heartbeat** is the file `out/runner.json` on branch `pilot`, written only by the runner:
