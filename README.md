@@ -37,6 +37,9 @@ pilot.runner.colab_start(REPO)
 
 Done. To stop: ■ in Colab. Shut the runtime down yourself when finished.
 
+**Or as a skill:** copy [`skill/colab-pilot`](skill/colab-pilot) into `.claude/skills/` (or your
+agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
+
 ---
 
 [Why it exists](docs/WHY.md) · [How it works](ARCHITECTURE.md) · Only people you trust should have
