@@ -158,7 +158,7 @@ as a way around free-tier limits.
 ## 7. Tests
 
 `bash tests/run_all.sh [--coverage]` runs everything; CI (`.github/workflows/tests.yml`) runs it on
-Python 3.9 and 3.12 for every push.
+Python 3.10 and 3.13 for every push.
 
 - **Unit** (`test_runner_unit.py`, `test_telemetry_unit.py`, `test_history_report_unit.py`):
   parsing, redaction, mailbox, STOP semantics, checkout, loop exits, every `colab_start` message,
