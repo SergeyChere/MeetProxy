@@ -32,6 +32,17 @@ If `pilot status` says no runner is connected, tell the human exactly this, then
    idle / low util → the GPU waits for CPU, data or copies; throttle or unstable SM clock → timings
    are distorted, do not compare them; mem peak ≥ 90% → near OOM; other procs → shared GPU.
    Full numbers: `gpu_stats` in `.done`; every sample: `.pilot/out/<job>/gpu.csv`.
+5. **Compare runs** with `pilot history` (one line per finished job: GPU, commit, seconds, exit,
+   util, flags) instead of reopening old logs.
+
+## For the human, not for you
+
+- When the human asks for charts or a report, add `# charts: on` to the job, or run
+  `pilot report <job>` / `pilot report history` and tell them the printed path. The reports
+  (`report.md`, `history.md`, `charts/*.svg`) are drawn on the GPU side for people; **never open,
+  read or summarize them** — they cost tokens and say nothing `.done` and `history.csv` do not.
+- `pilot export [job…|--all]` copies results into `pilot-runs/` of the project for the human;
+  it commits nothing. Commit it only if the human asks.
 
 ## Rules
 

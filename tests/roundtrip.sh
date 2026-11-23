@@ -48,13 +48,34 @@ echo v2 > version.txt && git commit -qam v2 && git push -q origin main
 { printf 'cat version.txt\n' | $P run a2 - --poll 1 --timeout 60 2>/dev/null | grep "^v2" >/dev/null; } && ok "runner pulled new code" || fail "runner pulled new code"
 { grep -q '"code": "code [0-9a-f]* v2 (main)"' .pilot/out/a2.done; } && ok "commit recorded in .done" || fail "commit recorded in .done"
 
+# history: one line per finished job, compact table for the agent
+{ grep -q "^a2,.*,0," .pilot/out/history.csv 2>/dev/null || { $P history >/dev/null; grep -q "^a2," .pilot/out/history.csv; }; } \
+  && ok "history.csv has a line per job" || fail "history.csv"
+{ H=$($P history --last 1); [ "$(echo "$H" | wc -l)" -eq 2 ] && echo "$H" | grep "^a2 " >/dev/null; } \
+  && ok "pilot history: header + newest job" || fail "pilot history"
+
+# human report on request; the agent's output does not mention it
+printf '# charts: on\necho measured > $PILOT_OUT/results.csv\n' > c.sh
+$P run c1 c.sh --poll 1 --timeout 60 > "$T/c1.txt" 2>&1 || true
+{ test -f .pilot/out/c1/report.md && test -f .pilot/out/history.md; } && ok "charts: on -> report.md + history.md" || { cat "$T/runner1.out"; fail "report made"; }
+{ ! grep -qi "report" "$T/c1.txt"; } && ok "agent output does not mention the report" || fail "report hidden from agent"
+{ ! test -f .pilot/out/a2/report.md; } && ok "no report without asking" || fail "no report by default"
+
+# export to the project folder, not committed
+{ $P export a1 c1 | grep "exported 2 job" >/dev/null && test -f pilot-runs/a1/results.csv && test -f pilot-runs/c1/report.md \
+  && test -f pilot-runs/history.csv && [ -z "$(git status --porcelain --ignored -- pilot-runs | grep -v '^??')" ]; } \
+  && ok "export copies results, not committed" || fail "export"
+{ $P report a1 | grep "pilot-runs/a1/report.md" >/dev/null && grep -q "# a1" pilot-runs/a1/report.md; } \
+  && ok "pilot report builds a report locally" || fail "pilot report"
+rm -rf pilot-runs c.sh
+
 # the agent works on its own branch: jobs run that branch, unpushed commits are flagged
 git checkout -q -b claude/feature && echo v3 > version.txt && git commit -qam v3
 printf 'cat version.txt\n' | $P send b1 - 2> "$T/warn.txt" || true
 { grep -q "not on GitHub" "$T/warn.txt"; } && ok "unpushed branch flagged" || fail "unpushed branch flagged"
 git push -q -u origin claude/feature 2>/dev/null
 printf 'cat version.txt\n' | $P run b2 - --poll 1 --timeout 60 > "$T/b2.txt" 2>&1 || true
-{ grep -q "^v3" "$T/b2.txt"; } && ok "job ran the agent's branch" || { cat "$T/b2.txt" .pilot/out/b1.log 2>/dev/null; fail "job ran the agent's branch"; }
+{ grep -q "^v3" "$T/b2.txt"; } && ok "job ran the agent's branch" || { echo ---b2; cat "$T/b2.txt"; echo ---runner; tail -20 "$T/runner1.out"; echo ---b1; cat .pilot/out/b1.log 2>/dev/null; fail "job ran the agent's branch"; }
 $P wait b1 --poll 1 --timeout 60 >/dev/null 2>&1 || true
 
 # a job sent while another is running (rebase with a log being written)

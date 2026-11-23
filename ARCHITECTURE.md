@@ -5,7 +5,7 @@ sandbox. A GPU notebook (Google Colab with compute units, Kaggle, a local Jupyte
 The two never talk directly: **a git branch is the mailbox**. The human's only job is to open the
 notebook, run one cell, and later shut the runtime down.
 
-![How colab-pilot works](docs/how-it-works.svg)
+Diagrams: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
 ```
  ┌──────────────────────┐   git push cmd/*      ┌───────────────┐   git pull     ┌──────────────────────────┐
@@ -33,6 +33,9 @@ but `git` and a token that can write one private repository.
 | `out/<job>.done` | runner | JSON: exit code, seconds, start/end time, GPU |
 | `out/<job>/…` | job | any result files the job writes to `$PILOT_OUT` |
 | `out/<job>/gpu.csv` | runner | GPU telemetry: every sample that changed, at least one per 30 s |
+| `out/<job>/report.md`, `out/<job>/charts/` | runner | human report with SVG charts (only with `# charts: on`) |
+| `out/history.csv` | runner | one line per finished job, kept forever |
+| `out/history.md`, `out/charts/history.svg` | runner | human view of the history (updated by charts jobs) |
 | `out/runner.json` | runner | heartbeat: state, current job, GPU, last poll, version |
 
 Rules that make it conflict-free:
@@ -42,7 +45,7 @@ Rules that make it conflict-free:
 - A job is identified by its file name; it runs at most once (`out/<job>.done` exists → skip).
 - Jobs run in name order, one at a time (one GPU, no contention in measurements).
 - Job header lines configure it: `# branch: <name>`, `# timeout: 3600` (seconds), `# gpu: A100|L4|T4|any`
-  (refuse to run on the wrong GPU and report it in `.done`), `# telemetry: off`.
+  (refuse to run on the wrong GPU and report it in `.done`), `# telemetry: off`, `# charts: on`.
 - Nobody merges `pilot` into `main`. It is a log, not code.
 
 ## 2. Runner (`pilot/runner.py`, notebook side)
@@ -78,6 +81,15 @@ Loop: `pull → pick next job → git pull the project → run → push`, plus a
   line at the end of the log and as `gpu_check` in `pilot wait`, listing only what is off
   (`gpu WARN: idle 66% · thermal throttle 12%`) or `gpu ok: …`. Fields the driver does not know
   are dropped; a telemetry failure never costs a job its result.
+- **History** (`pilot/history.py`): every finished job, skipped ones included, appends one line
+  to `out/history.csv` (job, end, GPU, commit, branch, seconds, exit, error, util avg, memory peak,
+  flags). `pilot history` prints the last N as a short fixed-width table for the agent.
+- **Human reports** (`pilot/report.py`, matplotlib): only on request — `# charts: on` in a job or
+  `PILOT_CHARTS=1` on the runner — the runner writes `out/<job>/report.md` with SVG charts of the
+  telemetry (utilization, memory, SM clock with throttling shaded, temperature and power), the job's
+  results table and log tail, and refreshes `out/history.md`. Drawn on the GPU side, so the agent
+  spends no tokens; the guide tells it never to open them. GitHub renders them in place. A missing
+  matplotlib or a drawing error only skips the report.
 - **Runs in the notebook kernel** (`%run`), visible in the cell output, interruptible with the
   stop button. It is an experiment loop driven from the notebook, not a remote shell.
 
@@ -92,6 +104,9 @@ pilot logs <job> [--tail N]
 pilot status                     # heartbeat: alive?, GPU, current job, queue
 pilot stop                       # write cmd/STOP
 pilot guide                      # print the agent guide
+pilot history [--last N]         # one line per finished job
+pilot export [job…|--all]        # copy results to <repo>/pilot-runs/ (nothing committed)
+pilot report <job|history>       # human report into pilot-runs/ (needs matplotlib locally)
 ```
 
 All commands work on a local clone of the `pilot` branch (`PILOT_DIR`, default `<repo>/.pilot`,

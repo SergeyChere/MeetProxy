@@ -50,8 +50,20 @@ Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
    - `other GPU procs` / `GPU busy at start` — the GPU was shared.
    Full numbers are in `gpu_stats` in `.done`, every sample in `.pilot/out/<job>/gpu.csv`.
    `# telemetry: off` in a job disables it.
+6. **Compare runs** with `pilot history` — one line per finished job (GPU, commit, seconds, exit,
+   util, flags) — instead of reopening old logs.
 
 Other commands: `pilot logs <job> --tail 50`, `pilot status`, `pilot stop` (ends the runner).
+
+## For the human, not for you
+
+- When the user asks for charts or a report: add `# charts: on` to the job, or run
+  `pilot report <job>` / `pilot report history`, and give them the printed path. On GitHub the
+  reports are in branch `pilot`, folder `out/`, and render with their charts.
+- **Never open, read or summarize** `report.md`, `history.md` or `charts/*.svg`: they are drawn
+  for people, cost you tokens, and hold nothing that `.done` and `history.csv` do not.
+- `pilot export [job…|--all]` copies results into `pilot-runs/` of the project; it commits
+  nothing. Commit only if the user asks.
 
 ## 3. Job script rules
 

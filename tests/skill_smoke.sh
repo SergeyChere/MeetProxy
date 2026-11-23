@@ -26,7 +26,7 @@ EOF
 chmod +x "$T/bin/nvidia-smi"
 
 # the package, as pip would install it, in a clean venv
-python3 -m venv "$T/venv"
+python3 -m venv --system-site-packages "$T/venv"  # matplotlib, as on Colab
 "$T/venv/bin/pip" install -q "$ROOT"
 export PATH="$T/venv/bin:$T/bin:$PATH"
 
@@ -69,6 +69,13 @@ pilot run s01_template $SK/templates/job.sh --poll 1 --timeout 90 > "$T/job.txt"
 { test -f .pilot/out/s01_template/gpu.csv; } && ok "raw gpu.csv pushed" || fail "gpu.csv"
 { grep -q '"gpu_check": "gpu ok: util 97%' "$T/job.txt" && ! grep -q '"gpu_stats"' "$T/job.txt"; } \
   && ok "agent sees one compact gpu line, not the full stats" || { cat "$T/job.txt"; fail "compact gpu line"; }
+
+# a human report with charts, from the fake T4 telemetry
+printf '# timeout: 60\n# gpu: any\n# charts: on\nsleep 3; echo ok\n' > c.sh
+pilot run s02_charts c.sh --poll 1 --timeout 90 > "$T/c.txt" 2>&1 || true
+{ test -f .pilot/out/s02_charts/report.md && test -s .pilot/out/s02_charts/charts/gpu.svg \
+  && grep -q "charts/gpu.svg" .pilot/out/s02_charts/report.md; } && ok "report.md with GPU chart" || { cat "$T/c.txt"; fail "charts"; }
+{ test -s .pilot/out/charts/history.svg; } && ok "history chart" || fail "history chart"
 
 pilot stop > /dev/null
 for i in $(seq 30); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done

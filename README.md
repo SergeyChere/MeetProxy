@@ -2,7 +2,7 @@
 
 Your AI agent runs experiments on your Colab GPU by itself. You press one button.
 
-![How colab-pilot works](docs/how-it-works.svg)
+[![How colab-pilot works](docs/how-it-works.svg)](docs/HOW-IT-WORKS.md)
 
 ## You need
 
@@ -39,10 +39,14 @@ pilot.runner.colab_start(REPO)
 
 Done. To stop: ■ in Colab. Shut the runtime down yourself when finished.
 
+**Results:** branch `pilot` of your repo, folder `out/`. Ask the agent for *charts* and you get a
+`report.md` with GPU graphs there (made on the GPU side, no agent tokens); `pilot history` lists
+every run; `pilot export` copies results next to your code.
+
 **Or as a skill:** copy [`skill/colab-pilot`](skill/colab-pilot) into `.claude/skills/` (or your
 agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
 
 ---
 
-[Why it exists](docs/WHY.md) · [How it works](ARCHITECTURE.md) · Only people you trust should have
+[Why it exists](docs/WHY.md) · [How it works](docs/HOW-IT-WORKS.md) · [Architecture](ARCHITECTURE.md) · Only people you trust should have
 write access to the repository: the notebook runs what is pushed to its `pilot` branch. · MIT
