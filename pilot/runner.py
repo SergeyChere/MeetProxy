@@ -10,7 +10,7 @@ Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12
 import json, os, re, shutil, signal, subprocess, threading, time
 from datetime import datetime, timezone
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -57,6 +57,13 @@ def git(path, *args, check=True):
 IDENT = ["-c", "user.name=colab-pilot", "-c", "user.email=colab-pilot@localhost"]
 
 
+def set_identity(path):
+    """Colab has no git identity; without one, `pull --rebase` (needed whenever the agent pushed a
+    command meanwhile) and autostash fail, and every later push is rejected."""
+    git(path, "config", "user.name", "colab-pilot")
+    git(path, "config", "user.email", "colab-pilot@localhost")
+
+
 def open_mailbox(url, path, branch=BRANCH):
     """Clone the mailbox branch of `url` into `path`; create the branch if it does not exist."""
     shutil.rmtree(path, ignore_errors=True)
@@ -64,6 +71,7 @@ def open_mailbox(url, path, branch=BRANCH):
         r = subprocess.run(["git", "clone", "-q", "--depth", "20", "-b", branch, url, path],
                            capture_output=True, text=True)
         if r.returncode == 0:
+            set_identity(path)
             return path
         shutil.rmtree(path, ignore_errors=True)
         if "not found" not in r.stderr and "Remote branch" not in r.stderr:
@@ -76,6 +84,7 @@ def open_mailbox(url, path, branch=BRANCH):
         for d in ("cmd", "out"):
             os.makedirs(os.path.join(path, d))
             open(os.path.join(path, d, ".keep"), "w").close()
+        set_identity(path)
         git(path, "add", "-A")
         git(path, *IDENT, "commit", "-q", "-m", "colab-pilot mailbox")
         if git(path, "push", "-q", "-u", "origin", branch, check=False).returncode == 0:
@@ -103,10 +112,18 @@ class Mailbox:
             elif os.path.exists(src):
                 shutil.copyfile(src, dst)
 
+    def _rebase_pull(self):
+        r = git(self.path, *IDENT, "-c", "rebase.autoStash=true", "pull", "-q", "--rebase",
+                check=False)
+        if r.returncode and os.path.isdir(os.path.join(self.path, ".git", "rebase-merge")):
+            git(self.path, "rebase", "--abort", check=False)
+        if r.returncode:
+            print(f"[{now()}] warning: pull failed: {redact(r.stderr.strip())[:300]}", flush=True)
+        return r.returncode == 0
+
     def pull(self):
-        # autostash: the job log is being written while we rebase onto new commands
         with self.lock:
-            git(self.path, "-c", "rebase.autoStash=true", "pull", "-q", "--rebase", check=False)
+            self._rebase_pull()
 
     def push(self, msg):
         with self.lock:
@@ -116,12 +133,13 @@ class Mailbox:
                 return True
             git(self.path, *IDENT, "commit", "-q", "-m", msg)
             for _ in range(5):
-                if git(self.path, "push", "-q", check=False).returncode == 0:
+                p = git(self.path, "push", "-q", check=False)
+                if p.returncode == 0:
                     return True
-                git(self.path, "-c", "rebase.autoStash=true", "pull", "-q", "--rebase",
-                    check=False)
+                self._rebase_pull()
                 time.sleep(2)
-            print(f"[{now()}] warning: push failed, will retry later", flush=True)
+            print(f"[{now()}] warning: push failed, will retry later: "
+                  f"{redact(p.stderr.strip())[:300]}", flush=True)
             return False
 
     def p(self, *parts):

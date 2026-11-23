@@ -25,7 +25,11 @@ $P init > /dev/null
 { $P status | grep -q "No runner"; } && ok "status explains that no runner is connected" || fail "status explains that no runner is connected"
 
 start_runner() {
-  MY_TOKEN=supersecret123 POLL_S=1 PUSH_S=1 HEARTBEAT_S=2 IDLE_MIN=2 \
+  # the runner gets no git identity at all, like a fresh Colab VM
+  mkdir -p "$T/home$1"
+  env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
+    HOME="$T/home$1" GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME="$T/home$1" \
+    MY_TOKEN=supersecret123 POLL_S=1 PUSH_S=1 HEARTBEAT_S=2 IDLE_MIN=2 \
     python3 -c "import pilot.runner as r; r.start('$T/gh.git', '$T/colab/proj', '$T/colab/mb')" \
     > "$T/runner$1.out" 2>&1 &
   RUNNER=$!
