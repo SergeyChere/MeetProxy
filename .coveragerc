@@ -1,0 +1,9 @@
+[run]
+source = pilot
+parallel = true
+sigterm = true
+data_file = .coverage
+
+[report]
+show_missing = true
+skip_empty = true

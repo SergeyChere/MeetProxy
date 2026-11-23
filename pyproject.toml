@@ -23,3 +23,8 @@ packages = ["pilot"]
 
 [tool.setuptools.package-data]
 pilot = ["guide.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

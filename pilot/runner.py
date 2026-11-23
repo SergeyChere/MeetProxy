@@ -40,7 +40,8 @@ def gpu_info():
         q = "name,memory.total,driver_version"
         r = subprocess.run(["nvidia-smi", f"--query-gpu={q}", "--format=csv,noheader"],
                            capture_output=True, text=True, timeout=20)
-        return r.stdout.strip() or "none"
+        # a failing nvidia-smi prints its error to stdout: that is not a GPU name
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "none"
     except Exception:
         return "none"
 
@@ -284,6 +285,11 @@ class Runner:
                 why["error"] = "interrupted"
                 raise
             finally:
+                if "error" not in why:  # output ended normally: let bash report its own exit code
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        pass
                 kill(proc)  # whole group: no stray GPU processes survive the job
                 code = proc.wait()
                 stop_flag.set()

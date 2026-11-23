@@ -55,7 +55,7 @@ def push(msg):
     git("commit", "-q", "-m", msg)
     # the runner pushes logs every PUSH_S while a job runs, so a push can lose the race a few
     # times in a row; back off with jitter instead of giving up after a fixed short burst
-    for i in range(12):
+    for i in range(max(1, int(os.environ.get("PILOT_PUSH_TRIES", 12)))):
         r = git("push", "-q", check=False)
         if r.returncode == 0:
             return
@@ -151,7 +151,7 @@ def cmd_wait(a):
                 short["gpu_check"] = gpu_line(d["gpu_stats"])
             print(json.dumps(short), file=sys.stderr)
             sys.exit(d["exit"] if 0 <= d["exit"] < 256 else 1)
-        if not warned and not log and time.time() - t0 > 120:
+        if not warned and not log and time.time() - t0 > float(os.environ.get("PILOT_SILENT_S", 120)):
             msg = runner_problem()
             if msg:
                 print(msg, file=sys.stderr)

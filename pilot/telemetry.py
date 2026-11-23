@@ -43,13 +43,18 @@ def _num(s):
         return None
 
 
-def _smi(query, timeout=10):
+def _smi(query, timeout=10, errors=None):
+    """Rows of nvidia-smi csv output, or None on failure (its message goes into `errors`)."""
     try:
         r = subprocess.run(["nvidia-smi", f"--query-{query}", "--format=csv,noheader,nounits"],
                            capture_output=True, text=True, timeout=timeout)
-    except Exception:
+    except Exception as e:
+        if errors is not None:
+            errors.append(str(e))
         return None
     if r.returncode:
+        if errors is not None:
+            errors.append(r.stdout + r.stderr)
         return None
     return [ln.split(",") for ln in r.stdout.strip().splitlines() if ln.strip()]
 
@@ -85,16 +90,22 @@ class Sampler:
         self.busy_at_start = 0
         self._stop = threading.Event()
         self._th = None
+        self._first = None
         self.t0 = None
 
     # -- collection --
     def _query(self):
         while self.fields:
             q = ",".join(f for _, f in self.fields)
-            rows = _smi(f"gpu={q}")
+            err = []
+            rows = _smi(f"gpu={q}", errors=err)
             if rows is not None:
                 return rows
-            drop = next((x for x in self.fields if x[1] in OPTIONAL), None)
+            msg = " ".join(err)
+            if "valid field" not in msg:  # a transient failure: skip this sample, keep the fields
+                return None
+            drop = next((x for x in self.fields if x[1] in OPTIONAL and x[1] in msg), None) or \
+                next((x for x in self.fields if x[1] in OPTIONAL), None)
             if drop is None:
                 return None
             self.fields.remove(drop)  # unknown field on this driver: retry without it
@@ -109,6 +120,7 @@ class Sampler:
                 self.static[r[0].strip()] = {"name": r[1].strip(), "mem_total_mb": _num(r[2]),
                                              "power_limit_w": _num(r[3]), "sm_max_mhz": _num(r[4])}
         self.busy_at_start = foreign(gpu_processes(), None)
+        self._first = self._query()  # settles the field list before the CSV header is written
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self.t0 = time.time()
         self._th = threading.Thread(target=self._run, daemon=True)
@@ -127,7 +139,7 @@ class Sampler:
             f.write("t," + ",".join(c for c, _ in self.fields) + "\n")
             while not self._stop.is_set():
                 t = round(time.time() - self.t0, 1)
-                rows = self._query()
+                rows, self._first = (self._first, None) if self._first else (self._query(), None)
                 if rows:
                     cols = [c for c, _ in self.fields]
                     for r in rows:

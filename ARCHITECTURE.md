@@ -155,7 +155,28 @@ port and no tunnel; it is a loop inside the notebook. Still: **use it with compu
 runtimes), Colab Enterprise, a local runtime or Kaggle under their terms.** Do not market or use it
 as a way around free-tier limits.
 
-## 7. Roadmap
+## 7. Tests
+
+`bash tests/run_all.sh [--coverage]` runs everything; CI (`.github/workflows/tests.yml`) runs it on
+Python 3.9 and 3.12 for every push.
+
+- **Unit** (`test_runner_unit.py`, `test_telemetry_unit.py`, `test_history_report_unit.py`):
+  parsing, redaction, mailbox, STOP semantics, checkout, loop exits, every `colab_start` message,
+  telemetry sampling/compaction/flags, history, reports and charts, failure paths.
+- **CLI** (`test_cli.py`): every command and message against a mailbox whose runner side is
+  written by hand.
+- **End to end** (`test_e2e.py`): the real runner in its own process with no git identity (like a
+  fresh Colab VM), the real CLI, a bare repo as GitHub, `tests/fake_nvidia_smi.py` as the GPU
+  (healthy, overheating, old driver, busy, broken). Stories: a new user installs the skill and runs
+  a benchmark; an unhealthy GPU is reported in one line; job control (branches, exit codes,
+  secrets, timeouts, STOP mid-job, queueing, restart); CPU-only runtime; idle exit; the runtime dies
+  mid-job.
+- **Shell journeys**: `roundtrip.sh` (no GPU) and `skill_smoke.sh` (the zip, a clean venv).
+
+CLI knobs used by tests, harmless otherwise: `PILOT_PUSH_TRIES` (12), `PILOT_SILENT_S` (120 s
+before `wait` checks the heartbeat).
+
+## 8. Roadmap
 
 - Opt-in release of the runtime after N idle minutes (`google.colab.runtime.unassign()`), so
   compute units are not burnt while nobody uses the GPU. Off by default: today that decision is
