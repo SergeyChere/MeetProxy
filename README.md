@@ -21,6 +21,16 @@ First time only: key icon on the left → add a secret named `GH_TOKEN` with a G
 [fine-grained token](https://github.com/settings/personal-access-tokens/new) for that same
 repository, *Contents: Read and write*.
 
+The button opens [`examples/colab_runner.ipynb`](examples/colab_runner.ipynb). It is one cell; you can
+also paste it into any Colab notebook yourself:
+
+```python
+REPO = "alice/my-kernels"  #@param {type:"string"}
+!pip -q install git+https://github.com/SergeyChere/colab-pilot
+import pilot.runner
+pilot.runner.colab_start(REPO)
+```
+
 **2. Claude:** say
 
 > Use https://github.com/SergeyChere/colab-pilot to run our benchmarks on my Colab GPU.
