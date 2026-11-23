@@ -5,12 +5,17 @@ In Colab (one cell):
     import pilot.runner; pilot.runner.colab_start("you/your-project")
 
 The mailbox is the branch `pilot` of your own project repository; it is created if missing.
-Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12
+Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12 GPU_SAMPLE_S=1
 """
 import json, os, re, shutil, signal, subprocess, threading, time
+
+try:
+    from pilot import telemetry
+except ImportError:  # runner.py run as a plain script
+    import telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -223,11 +228,16 @@ class Runner:
         self.state, self.job = "running", name
         self.heartbeat()
         self.mb.push(f"{name}: start")
+        sampler = None
+        if not no_gpu and (header(script, "telemetry") or "on").lower() != "off":
+            sampler = telemetry.Sampler(os.path.join(outdir, "gpu.csv")).start()
         with open(logpath, "w") as log:
             log.write(f"# colab-pilot: {name} on {self.gpu}; {done['code']}\n")
             proc = subprocess.Popen(["bash", "-c", script], cwd=self.workdir, env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, start_new_session=True)
+            if sampler:
+                sampler.pgid = proc.pid  # its own session: pgid == pid
             stop_flag = threading.Event()
             why = {}
 
@@ -265,6 +275,15 @@ class Runner:
                 th.join()
                 log.flush()
                 done.update(why, exit=code, seconds=round(time.time() - t0, 1), end=now())
+                if sampler:
+                    try:
+                        stats = sampler.stop()
+                    except Exception as e:  # telemetry must never cost a job its result
+                        stats = {"error": str(e)[:200], "flags": []}
+                    if stats:
+                        done["gpu_stats"] = stats
+                        log.write(telemetry.line(stats) + "\n")
+                        log.flush()
                 self.finish(name, done)
                 self.state, self.job = "idle", None
                 self.heartbeat()

@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfaf7"/>
+      <stop offset="1" stop-color="#f3f1ec"/>
+    </linearGradient>
+    <marker id="ah-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd8"/>
+    </marker>
+    <marker id="ah-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f9d6b"/>
+    </marker>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#2a2620" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="780" rx="22" fill="url(#bg)"/>
+
+  <!-- title -->
+  <text x="60" y="66" font-size="30" font-weight="700" fill="#1f1d1a">How colab-pilot works</text>
+  <text x="60" y="96" font-size="16" fill="#6b665e">Your agent has no GPU, your notebook has one. A git branch carries jobs one way and results the other.</text>
+
+  <!-- ============ AGENT ============ -->
+  <g filter="url(#sh)">
+    <rect x="50" y="140" width="300" height="400" rx="18" fill="#ffffff" stroke="#e4e0d8"/>
+  </g>
+  <rect x="50" y="140" width="300" height="8" rx="4" fill="#3b6fd8"/>
+  <text x="76" y="186" font-size="13" font-weight="700" letter-spacing="1.5" fill="#3b6fd8">AI AGENT</text>
+  <text x="76" y="214" font-size="21" font-weight="700" fill="#1f1d1a">Claude Code, Codex…</text>
+  <text x="76" y="238" font-size="14" fill="#6b665e">laptop or cloud sandbox, no GPU</text>
+
+  <g font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="14">
+    <rect x="76" y="262" width="248" height="34" rx="8" fill="#eef3fd"/>
+    <text x="90" y="284" fill="#23407e">git push  <tspan fill="#6b665e">your code</tspan></text>
+    <rect x="76" y="306" width="248" height="34" rx="8" fill="#eef3fd"/>
+    <text x="90" y="328" fill="#23407e">pilot send <tspan fill="#6b665e">job.sh</tspan></text>
+    <rect x="76" y="350" width="248" height="34" rx="8" fill="#eef3fd"/>
+    <text x="90" y="372" fill="#23407e">pilot wait <tspan fill="#6b665e">--follow</tspan></text>
+  </g>
+  <text x="76" y="420" font-size="14" font-weight="600" fill="#1f1d1a">Reads back</text>
+  <text x="76" y="444" font-size="14" fill="#4a463f">• the live log, every ~45 s</text>
+  <text x="76" y="466" font-size="14" fill="#4a463f">• exit code, GPU, commit, time</text>
+  <text x="76" y="488" font-size="14" fill="#4a463f">• results.csv</text>
+  <text x="76" y="510" font-size="14" fill="#4a463f">• one line about the GPU</text>
+
+  <!-- ============ MAILBOX ============ -->
+  <g filter="url(#sh)">
+    <rect x="450" y="140" width="300" height="400" rx="18" fill="#ffffff" stroke="#e4e0d8"/>
+  </g>
+  <rect x="450" y="140" width="300" height="8" rx="4" fill="#7a5af0"/>
+  <text x="476" y="186" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7a5af0">GITHUB · YOUR REPO</text>
+  <text x="476" y="214" font-size="21" font-weight="700" fill="#1f1d1a">branch <tspan font-family="'JetBrains Mono', Menlo, Consolas, monospace">pilot</tspan></text>
+  <text x="476" y="238" font-size="14" fill="#6b665e">the mailbox, versioned and reviewable</text>
+
+  <!-- cmd folder -->
+  <rect x="476" y="262" width="248" height="112" rx="12" fill="#f1f5fe" stroke="#c9d8f7"/>
+  <text x="494" y="290" font-size="16" font-weight="700" fill="#23407e" font-family="'JetBrains Mono', Menlo, Consolas, monospace">cmd/</text>
+  <text x="560" y="290" font-size="13" fill="#6b665e">written by the agent</text>
+  <g font-family="'JetBrains Mono', Menlo, Consolas, monospace" font-size="13" fill="#3b4a6b">
+    <text x="494" y="318">s01_build.sh</text>
+    <text x="494" y="340">s02_bench.sh</text>
+    <text x="494" y="362">STOP</text>
+  </g>
+
+  <!-- out folder -->
+  <rect x="476" y="390" width="248" height="130" rx="12" fill="#eefaf4" stroke="#bfe6d3"/>
+  <text x="494" y="418" font-size="16" font-weight="700" fill="#16704d" font-family="'JetBrains Mono', Menlo, Consolas, monospace">out/</text>
+  <text x="552" y="418" font-size="13" fill="#6b665e">written by the runner</text>
+  <g font-family="'JetBrains Mono', Menlo, Consolas, monospace" font-size="13" fill="#2f5a47">
+    <text x="494" y="444">s02_bench.log</text>
+    <text x="494" y="464">s02_bench.done</text>
+    <text x="494" y="484">s02_bench/results.csv</text>
+    <text x="494" y="504">s02_bench/gpu.csv</text>
+  </g>
+
+  <!-- ============ RUNNER ============ -->
+  <g filter="url(#sh)">
+    <rect x="850" y="140" width="300" height="400" rx="18" fill="#ffffff" stroke="#e4e0d8"/>
+  </g>
+  <rect x="850" y="140" width="300" height="8" rx="4" fill="#1f9d6b"/>
+  <text x="876" y="186" font-size="13" font-weight="700" letter-spacing="1.5" fill="#1f9d6b">COLAB GPU · RUNNER</text>
+  <text x="876" y="214" font-size="21" font-weight="700" fill="#1f1d1a">a loop in the notebook</text>
+  <text x="876" y="238" font-size="14" fill="#6b665e">no ports, no tunnel, no shell</text>
+
+  <g font-size="14" fill="#2b2925">
+    <circle cx="890" cy="279" r="12" fill="#1f9d6b"/><text x="890" y="284" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">1</text>
+    <text x="912" y="284">pull the next job</text>
+    <circle cx="890" cy="317" r="12" fill="#1f9d6b"/><text x="890" y="322" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">2</text>
+    <text x="912" y="322">check out your pushed branch</text>
+    <circle cx="890" cy="355" r="12" fill="#1f9d6b"/><text x="890" y="360" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">3</text>
+    <text x="912" y="360">run it in its own process group</text>
+    <circle cx="890" cy="393" r="12" fill="#1f9d6b"/><text x="890" y="398" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">4</text>
+    <text x="912" y="398">sample the GPU every second</text>
+    <circle cx="890" cy="431" r="12" fill="#1f9d6b"/><text x="890" y="436" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">5</text>
+    <text x="912" y="436">push log, results, telemetry</text>
+  </g>
+  <rect x="876" y="462" width="248" height="58" rx="10" fill="#f6f4ef"/>
+  <text x="890" y="486" font-size="13" fill="#4a463f">Secrets masked in logs</text>
+  <text x="890" y="506" font-size="13" fill="#4a463f">Timeouts · wrong GPU refused</text>
+
+  <!-- ============ ARROWS ============ -->
+  <!-- agent -> cmd -->
+  <path d="M352,318 C392,318 408,318 470,318" fill="none" stroke="#3b6fd8" stroke-width="3" marker-end="url(#ah-blue)"/>
+  <rect x="368" y="282" width="66" height="24" rx="12" fill="#3b6fd8"/>
+  <text x="401" y="299" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">push</text>
+
+  <!-- cmd -> runner -->
+  <path d="M726,318 C780,318 800,280 868,280" fill="none" stroke="#3b6fd8" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#ah-blue)"/>
+  <rect x="768" y="262" width="66" height="24" rx="12" fill="#3b6fd8"/>
+  <text x="801" y="279" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">pull</text>
+
+  <!-- runner -> out -->
+  <path d="M868,436 C800,436 790,456 730,456" fill="none" stroke="#1f9d6b" stroke-width="3" marker-end="url(#ah-green)"/>
+  <rect x="768" y="466" width="66" height="24" rx="12" fill="#1f9d6b"/>
+  <text x="801" y="483" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">push</text>
+
+  <!-- out -> agent -->
+  <path d="M470,470 C410,470 400,470 356,470" fill="none" stroke="#1f9d6b" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#ah-green)"/>
+  <rect x="368" y="480" width="66" height="24" rx="12" fill="#1f9d6b"/>
+  <text x="401" y="497" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">pull</text>
+
+  <!-- ============ TELEMETRY STRIP ============ -->
+  <g filter="url(#sh)">
+    <rect x="50" y="580" width="1100" height="150" rx="18" fill="#1f1d1a"/>
+  </g>
+  <text x="80" y="618" font-size="13" font-weight="700" letter-spacing="1.5" fill="#f2b84b">GPU TELEMETRY · COLLECT EVERYTHING, RETURN COMPACTLY</text>
+
+  <!-- level 1 -->
+  <text x="80" y="652" font-size="14" font-weight="700" fill="#ffffff">1 · Flags</text>
+  <text x="80" y="672" font-size="13" fill="#b9b3a8">what the agent reads, only what is off</text>
+  <rect x="80" y="684" width="330" height="30" rx="8" fill="#2d2a25"/>
+  <text x="94" y="704" font-size="12.5" fill="#f2b84b" font-family="'JetBrains Mono', Menlo, Consolas, monospace">gpu WARN: idle 66% · thermal 12%</text>
+
+  <!-- arrow -->
+  <text x="436" y="702" font-size="22" fill="#6b665e">›</text>
+
+  <!-- level 2 -->
+  <text x="466" y="652" font-size="14" font-weight="700" fill="#ffffff">2 · Summary</text>
+  <text x="466" y="672" font-size="13" fill="#b9b3a8">gpu_stats in .done: averages, peaks, %</text>
+  <rect x="466" y="684" width="300" height="30" rx="8" fill="#2d2a25"/>
+  <text x="480" y="704" font-size="12.5" fill="#8fd1b2" font-family="'JetBrains Mono', Menlo, Consolas, monospace">util_avg 34 · mem_peak 14200</text>
+
+  <!-- arrow -->
+  <text x="792" y="702" font-size="22" fill="#6b665e">›</text>
+
+  <!-- level 3 -->
+  <text x="822" y="652" font-size="14" font-weight="700" fill="#ffffff">3 · Raw</text>
+  <text x="822" y="672" font-size="13" fill="#b9b3a8">gpu.csv: every sample that changed</text>
+  <rect x="822" y="684" width="298" height="30" rx="8" fill="#2d2a25"/>
+  <text x="836" y="704" font-size="12.5" fill="#9fb8ef" font-family="'JetBrains Mono', Menlo, Consolas, monospace">t,util,mem_mb,sm_mhz,temp…</text>
+
+  <!-- human note -->
+  <text x="600" y="762" text-anchor="middle" font-size="13" fill="#6b665e">You: open the notebook, Run all once, shut the runtime down when finished. Everything else is the agent's.</text>
+</svg>

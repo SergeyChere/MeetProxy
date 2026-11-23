@@ -27,6 +27,11 @@ If `pilot status` says no runner is connected, tell the human exactly this, then
 2. `pilot run <job> script.sh` — sends it and streams the log until it ends; the exit code is the
    job's exit code. For a long run: `pilot send`, keep working, `pilot wait <job> --follow` later.
 3. Read the log and `.pilot/out/<job>.done` (GPU name, commit, seconds, exit, error).
+4. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output).
+   `gpu ok` means nothing was off. `gpu WARN: idle 66% · thermal throttle 12%` lists only what was:
+   idle / low util → the GPU waits for CPU, data or copies; throttle or unstable SM clock → timings
+   are distorted, do not compare them; mem peak ≥ 90% → near OOM; other procs → shared GPU.
+   Full numbers: `gpu_stats` in `.done`; every sample: `.pilot/out/<job>/gpu.csv`.
 
 ## Rules
 

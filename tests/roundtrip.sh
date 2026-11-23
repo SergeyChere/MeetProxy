@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 RUNNER=
-cleanup() { [ -n "$RUNNER" ] && kill "$RUNNER" 2>/dev/null; rm -rf "$T"; }
+cleanup() { if [ -n "$RUNNER" ]; then kill "$RUNNER" 2>/dev/null || true; fi; rm -rf "$T"; }
 trap cleanup EXIT
 export PYTHONPATH="$ROOT" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 P="python3 -m pilot.cli"
@@ -22,7 +22,7 @@ cd "$T/agent"
 $P init > /dev/null
 { git -C "$T/gh.git" rev-parse -q --verify pilot > /dev/null; } && ok "init created branch pilot" || fail "init created branch pilot"
 { grep -q ".pilot/" .git/info/exclude; } && ok ".pilot excluded from the project" || fail ".pilot excluded from the project"
-{ $P status | grep -q "No runner"; } && ok "status explains that no runner is connected" || fail "status explains that no runner is connected"
+{ grep -q "No runner" <<< "$($P status)"; } && ok "status explains that no runner is connected" || fail "status explains that no runner is connected"
 
 start_runner() {
   # the runner gets no git identity at all, like a fresh Colab VM
@@ -45,7 +45,7 @@ printf 'cat version.txt\necho token=$MY_TOKEN\necho 1,2 > $PILOT_OUT/results.csv
 
 # agent pushes new code; the next job must see it
 echo v2 > version.txt && git commit -qam v2 && git push -q origin main
-{ printf 'cat version.txt\n' | $P run a2 - --poll 1 --timeout 60 2>/dev/null | grep -q "^v2"; } && ok "runner pulled new code" || fail "runner pulled new code"
+{ printf 'cat version.txt\n' | $P run a2 - --poll 1 --timeout 60 2>/dev/null | grep "^v2" >/dev/null; } && ok "runner pulled new code" || fail "runner pulled new code"
 { grep -q '"code": "code [0-9a-f]* v2 (main)"' .pilot/out/a2.done; } && ok "commit recorded in .done" || fail "commit recorded in .done"
 
 # the agent works on its own branch: jobs run that branch, unpushed commits are flagged
@@ -62,7 +62,7 @@ printf 'for i in 1 2 3 4 5 6; do echo tick $i; sleep 1; done\n' | $P send a3 - 2
 sleep 3
 printf 'echo second\n' | $P send a4 - 2>/dev/null
 $P wait a3 --poll 1 --timeout 60 2>/dev/null
-{ $P wait a4 --follow --poll 1 --timeout 60 2>/dev/null | grep -q second; } && ok "job queued during a running job" || fail "job queued during a running job"
+{ $P wait a4 --follow --poll 1 --timeout 60 2>/dev/null | grep second >/dev/null; } && ok "job queued during a running job" || fail "job queued during a running job"
 { grep -q "tick 6" .pilot/out/a3.log; } && ok "full log streamed" || fail "full log streamed"
 
 set +e; printf 'exit 3\n' | $P run a5 - --poll 1 --timeout 60 >/dev/null 2>&1; rc=$?; set -e
@@ -79,11 +79,11 @@ printf '# gpu: any\necho no\n' | $P run a7b - --poll 1 --timeout 60 >/dev/null 2
 $P stop > /dev/null
 for i in $(seq 30); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done
 { ! kill -0 $RUNNER 2>/dev/null; } && ok "stop ends the runner" || fail "stop ends the runner"
-{ $P status | grep -q "Runner exited (stopped)"; } && ok "status explains the stop" || fail "status explains the stop"
+{ grep -q "Runner exited (stopped)" <<< "$($P status)"; } && ok "status explains the stop" || fail "status explains the stop"
 
 # a new runner (next evening) must not be blocked by the old STOP
 start_runner 2
-{ printf 'echo again\n' | $P run a8 - --poll 1 --timeout 60 2>/dev/null | grep -q again; } && ok "restart after stop works" || fail "restart after stop works"
+{ printf 'echo again\n' | $P run a8 - --poll 1 --timeout 60 2>/dev/null | grep again >/dev/null; } && ok "restart after stop works" || fail "restart after stop works"
 $P stop > /dev/null
 for i in $(seq 30); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done
 echo "roundtrip: all checks passed"

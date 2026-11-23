@@ -5,6 +5,8 @@ sandbox. A GPU notebook (Google Colab with compute units, Kaggle, a local Jupyte
 The two never talk directly: **a git branch is the mailbox**. The human's only job is to open the
 notebook, run one cell, and later shut the runtime down.
 
+![How colab-pilot works](docs/how-it-works.svg)
+
 ```
  ┌──────────────────────┐   git push cmd/*      ┌───────────────┐   git pull     ┌──────────────────────────┐
  │ AI agent (sandbox)   │ ───────────────────▶  │ GitHub branch │ ─────────────▶ │ runner.py in the notebook │
@@ -30,6 +32,7 @@ but `git` and a token that can write one private repository.
 | `out/<job>.log` | runner | stdout+stderr, pushed every `PUSH_S` seconds while running |
 | `out/<job>.done` | runner | JSON: exit code, seconds, start/end time, GPU |
 | `out/<job>/…` | job | any result files the job writes to `$PILOT_OUT` |
+| `out/<job>/gpu.csv` | runner | GPU telemetry: every sample that changed, at least one per 30 s |
 | `out/runner.json` | runner | heartbeat: state, current job, GPU, last poll, version |
 
 Rules that make it conflict-free:
@@ -39,7 +42,7 @@ Rules that make it conflict-free:
 - A job is identified by its file name; it runs at most once (`out/<job>.done` exists → skip).
 - Jobs run in name order, one at a time (one GPU, no contention in measurements).
 - Job header lines configure it: `# branch: <name>`, `# timeout: 3600` (seconds), `# gpu: A100|L4|T4|any`
-  (refuse to run on the wrong GPU and report it in `.done`).
+  (refuse to run on the wrong GPU and report it in `.done`), `# telemetry: off`.
 - Nobody merges `pilot` into `main`. It is a log, not code.
 
 ## 2. Runner (`pilot/runner.py`, notebook side)
@@ -67,6 +70,14 @@ Loop: `pull → pick next job → git pull the project → run → push`, plus a
   or disconnects the runtime: that is the human's decision.
 - **Budget limit.** `MAX_HOURS` (default 12) of wall time → finish the current job and exit.
 - **Environment report.** On start and in every heartbeat: `nvidia-smi` name, memory, driver, CUDA.
+- **GPU telemetry** (`pilot/telemetry.py`): while a job runs, `nvidia-smi --query-gpu` every
+  `GPU_SAMPLE_S` (1 s; doubles every 3600 samples). Collect everything, return it compactly:
+  *raw* — `out/<job>/gpu.csv`, only rows that changed; *summary* — `gpu_stats` in `.done`
+  (util avg/max, idle %, memory peak, SM clock and its spread under load, temperature, power,
+  % of time thermal-throttled / power-capped / HW-slowed, foreign GPU processes); *flags* — one
+  line at the end of the log and as `gpu_check` in `pilot wait`, listing only what is off
+  (`gpu WARN: idle 66% · thermal throttle 12%`) or `gpu ok: …`. Fields the driver does not know
+  are dropped; a telemetry failure never costs a job its result.
 - **Runs in the notebook kernel** (`%run`), visible in the cell output, interruptible with the
   stop button. It is an experiment loop driven from the notebook, not a remote shell.
 

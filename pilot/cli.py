@@ -6,7 +6,7 @@
     pilot send <job> <script|->   pilot wait <job> [--follow]   pilot logs <job> [--tail N]
     pilot status                  pilot stop                    pilot guide
 """
-import argparse, json, os, re, subprocess, sys, time
+import argparse, json, os, random, re, subprocess, sys, time
 from datetime import datetime, timezone
 
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
@@ -50,12 +50,15 @@ def pull():
 def push(msg):
     git("add", "-A", "cmd")
     git("commit", "-q", "-m", msg)
-    for _ in range(5):
-        if git("push", "-q", check=False).returncode == 0:
+    # the runner pushes logs every PUSH_S while a job runs, so a push can lose the race a few
+    # times in a row; back off with jitter instead of giving up after a fixed short burst
+    for i in range(12):
+        r = git("push", "-q", check=False)
+        if r.returncode == 0:
             return
         pull()
-        time.sleep(1)
-    sys.exit("push failed")
+        time.sleep(min(0.5 * (i + 1), 4) * (0.5 + random.random()))
+    sys.exit(f"push failed: {r.stderr.strip()[:300]}")
 
 
 def path(*p):
@@ -140,7 +143,10 @@ def cmd_wait(a):
         done = read(path("out", a.job + ".done"))
         if done:
             d = json.loads(done)
-            print(json.dumps(d), file=sys.stderr)
+            short = {k: v for k, v in d.items() if k != "gpu_stats"}
+            if "gpu_stats" in d:  # full numbers stay in the file; the agent gets one line
+                short["gpu_check"] = gpu_line(d["gpu_stats"])
+            print(json.dumps(short), file=sys.stderr)
             sys.exit(d["exit"] if 0 <= d["exit"] < 256 else 1)
         if not warned and not log and time.time() - t0 > 120:
             msg = runner_problem()
@@ -150,6 +156,12 @@ def cmd_wait(a):
         if a.timeout and time.time() - t0 > a.timeout:
             sys.exit("wait timeout")
         time.sleep(a.poll)
+
+
+def gpu_line(stats):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from pilot.telemetry import line
+    return line(stats)
 
 
 def cmd_run(a):

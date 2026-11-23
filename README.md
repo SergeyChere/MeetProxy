@@ -2,6 +2,8 @@
 
 Your AI agent runs experiments on your Colab GPU by itself. You press one button.
 
+![How colab-pilot works](docs/how-it-works.svg)
+
 ## You need
 
 - a GitHub repository with your code;

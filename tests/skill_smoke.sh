@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 RUNNER=
-cleanup() { [ -n "$RUNNER" ] && kill "$RUNNER" 2>/dev/null; rm -rf "$T"; }
+cleanup() { if [ -n "$RUNNER" ]; then kill "$RUNNER" 2>/dev/null || true; fi; rm -rf "$T"; }
 trap cleanup EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 ok() { echo "ok: $*"; }
@@ -16,8 +16,10 @@ mkdir -p "$T/bin"
 cat > "$T/bin/nvidia-smi" <<'EOF'
 #!/bin/sh
 case "$*" in
-  *query-gpu*) echo "Tesla T4, 15360 MiB, 535.104" ;;
   *query-compute-apps*) ;;
+  *index,name*) echo "0, Tesla T4, 15360, 70.00, 1590" ;;
+  *utilization.gpu*) echo "0, 97, 40, 6000, 1590, 5000, 65, 68.5, 0x0000000000000004" ;;
+  *query-gpu*) echo "Tesla T4, 15360 MiB, 535.104" ;;
   *) echo "fake nvidia-smi" ;;
 esac
 EOF
@@ -31,8 +33,8 @@ export PATH="$T/venv/bin:$T/bin:$PATH"
 # skill zip
 bash "$ROOT/scripts/build_skill.sh" > /dev/null
 ZIP="$ROOT/dist/colab-pilot-skill.zip"
-{ unzip -l "$ZIP" | grep -q "colab-pilot/SKILL.md"; } && ok "zip has SKILL.md at colab-pilot/" || fail "zip layout"
-{ unzip -p "$ZIP" colab-pilot/SKILL.md | head -4 | grep -q "^name: colab-pilot"; } && ok "frontmatter name" || fail "frontmatter name"
+{ unzip -l "$ZIP" | grep "colab-pilot/SKILL.md" >/dev/null; } && ok "zip has SKILL.md at colab-pilot/" || fail "zip layout"
+{ unzip -p "$ZIP" colab-pilot/SKILL.md | head -4 | grep "^name: colab-pilot" >/dev/null; } && ok "frontmatter name" || fail "frontmatter name"
 
 # fresh project, skill installed the documented way
 git init -q --bare -b main "$T/gh.git"
@@ -62,6 +64,11 @@ pilot run s01_template $SK/templates/job.sh --poll 1 --timeout 90 > "$T/job.txt"
 { grep -q '"exit": 0' .pilot/out/s01_template.done; } && ok ".done exit 0" || fail ".done"
 { [ "$(wc -l < .pilot/out/s01_template/results.csv)" -eq 7 ]; } && ok "results.csv: header + 6 rows" || fail "results.csv"
 { grep -q "Tesla T4" .pilot/out/s01_template.done; } && ok "GPU recorded" || fail "GPU recorded"
+{ grep -q '"gpu_stats"' .pilot/out/s01_template.done && grep -q '"util_avg": 97' .pilot/out/s01_template.done; } \
+  && ok "gpu_stats summary in .done" || fail "gpu_stats in .done"
+{ test -f .pilot/out/s01_template/gpu.csv; } && ok "raw gpu.csv pushed" || fail "gpu.csv"
+{ grep -q '"gpu_check": "gpu ok: util 97%' "$T/job.txt" && ! grep -q '"gpu_stats"' "$T/job.txt"; } \
+  && ok "agent sees one compact gpu line, not the full stats" || { cat "$T/job.txt"; fail "compact gpu line"; }
 
 pilot stop > /dev/null
 for i in $(seq 30); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done

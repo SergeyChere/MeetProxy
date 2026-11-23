@@ -41,6 +41,15 @@ Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
    - long job: `pilot send s01_bench job.sh`, keep working, later `pilot wait s01_bench --follow`.
 4. Read the result: the log, `.pilot/out/<job>.done` (exit code, seconds, GPU, commit) and
    `.pilot/out/<job>/results.csv`.
+5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
+   runner samples the GPU during every job and reports only what was off:
+   - `gpu ok: util 97%, mem 41%, 68°C` — nothing to worry about;
+   - `idle N%` / `util avg N%` — the GPU waits for CPU, data loading or copies, not for your kernel;
+   - `thermal throttle`, `hw slowdown`, `SM clock unstable` — timings are distorted, do not compare;
+   - `mem peak N%` — close to out-of-memory;
+   - `other GPU procs` / `GPU busy at start` — the GPU was shared.
+   Full numbers are in `gpu_stats` in `.done`, every sample in `.pilot/out/<job>/gpu.csv`.
+   `# telemetry: off` in a job disables it.
 
 Other commands: `pilot logs <job> --tail 50`, `pilot status`, `pilot stop` (ends the runner).
 
