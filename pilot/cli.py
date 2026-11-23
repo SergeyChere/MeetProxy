@@ -96,13 +96,18 @@ def add_branch(body):
     br = sh("git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
     if not br or br == "HEAD":
         return body
-    up = sh("git", "-C", top, "rev-list", "--count", f"origin/{br}..HEAD", check=False)
-    if up.returncode:
+    # ask GitHub directly: remote-tracking refs can be missing or stale in shallow/odd clones
+    remote = sh("git", "-C", top, "ls-remote", "origin", f"refs/heads/{br}", check=False)
+    rsha = remote.stdout.split()[0] if remote.returncode == 0 and remote.stdout.strip() else ""
+    head = sh("git", "-C", top, "rev-parse", "HEAD", check=False).stdout.strip()
+    if remote.returncode:
+        print("warning: could not reach GitHub to check that your code is pushed", file=sys.stderr)
+    elif not rsha:
         print(f"warning: branch {br} is not on GitHub yet: `git push -u origin {br}` first",
               file=sys.stderr)
-    elif up.stdout.strip() != "0":
-        print(f"warning: {up.stdout.strip()} commit(s) on {br} not pushed; the GPU runs the "
-              f"pushed version", file=sys.stderr)
+    elif rsha != head:
+        print(f"warning: your HEAD {head[:7]} differs from {br} on GitHub ({rsha[:7]}); "
+              f"the GPU runs the pushed version", file=sys.stderr)
     if sh("git", "-C", top, "status", "--porcelain", "-uno", check=False).stdout.strip():
         print("warning: uncommitted changes are not sent to the GPU", file=sys.stderr)
     return f"# branch: {br}\n" + body
