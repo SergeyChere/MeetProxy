@@ -5,12 +5,18 @@ In Colab (one cell):
     import pilot.runner; pilot.runner.colab_start("you/your-project")
 
 The mailbox is the branch `pilot` of your own project repository; it is created if missing.
-Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12
+Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12 GPU_SAMPLE_S=1
+PILOT_CHARTS=1 makes a human report for every job (otherwise only for `# charts: on`).
 """
 import json, os, re, shutil, signal, subprocess, threading, time
+
+try:
+    from pilot import history, report, telemetry
+except ImportError:  # runner.py run as a plain script
+    import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.2.1"
+VERSION = "0.4.0"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -201,6 +207,20 @@ class Runner:
     def finish(self, name, done):
         with open(self.mb.p("out", name + ".done"), "w") as f:
             json.dump(done, f, indent=1)
+        try:
+            history.append(self.mb.p("out", "history.csv"), done)
+        except Exception as e:
+            print(f"[{now()}] warning: history not written: {e}", flush=True)
+
+    def make_reports(self, job_dir, done, logpath):
+        """report.md + charts for humans. Never shown to the agent, never fatal."""
+        try:
+            log_text = redact(open(logpath).read(), self.secrets) if logpath else None
+            report.job_report(job_dir, done, log_text)
+            self.mb.sync()  # so history.md can link the new report
+            report.history_report(history.read(self.mb.p("out", "history.csv")), self.mb.p("out"))
+        except Exception as e:
+            print(f"[{now()}] charts skipped: {e}", flush=True)
 
     def run_job(self, name):
         script = open(self.mb.p("cmd", name + ".sh")).read()
@@ -223,11 +243,18 @@ class Runner:
         self.state, self.job = "running", name
         self.heartbeat()
         self.mb.push(f"{name}: start")
+        charts = (header(script, "charts") or "").lower() in ("on", "yes", "1") or \
+            os.environ.get("PILOT_CHARTS") == "1"
+        sampler = None
+        if not no_gpu and (header(script, "telemetry") or "on").lower() != "off":
+            sampler = telemetry.Sampler(os.path.join(outdir, "gpu.csv")).start()
         with open(logpath, "w") as log:
             log.write(f"# colab-pilot: {name} on {self.gpu}; {done['code']}\n")
             proc = subprocess.Popen(["bash", "-c", script], cwd=self.workdir, env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, start_new_session=True)
+            if sampler:
+                sampler.pgid = proc.pid  # its own session: pgid == pid
             stop_flag = threading.Event()
             why = {}
 
@@ -265,7 +292,18 @@ class Runner:
                 th.join()
                 log.flush()
                 done.update(why, exit=code, seconds=round(time.time() - t0, 1), end=now())
+                if sampler:
+                    try:
+                        stats = sampler.stop()
+                    except Exception as e:  # telemetry must never cost a job its result
+                        stats = {"error": str(e)[:200], "flags": []}
+                    if stats:
+                        done["gpu_stats"] = stats
+                        log.write(telemetry.line(stats) + "\n")
+                        log.flush()
                 self.finish(name, done)
+                if charts:
+                    self.make_reports(outdir, done, logpath)
                 self.state, self.job = "idle", None
                 self.heartbeat()
                 self.mb.push(f"{name}: done exit={code}")

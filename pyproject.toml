@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "colab-pilot"
-version = "0.2.1"
+version = "0.4.0"
 description = "Let an AI agent run GPU experiments in Google Colab through a git mailbox"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Sergii Cherepanov"}]
 requires-python = ">=3.8"
+
+[project.optional-dependencies]
+charts = ["matplotlib"]  # human reports; preinstalled on Colab
 
 [project.scripts]
 pilot = "pilot.cli:main"
