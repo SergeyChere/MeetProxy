@@ -38,7 +38,8 @@ Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
    results CSV already set up.
 3. Run it:
    - short job: `pilot run s01_bench job.sh` — sends, streams the log, exits with the job's exit code;
-   - long job: `pilot send s01_bench job.sh`, keep working, later `pilot wait s01_bench --follow`.
+   - long job: `pilot send s01_bench job.sh`, keep working, later `pilot wait s01_bench` (without
+     `--follow`: it would stream the whole log into your context), then `pilot logs s01_bench --tail 50`.
 4. Read the result: the log, `.pilot/out/<job>.done` (exit code, seconds, GPU, commit) and
    `.pilot/out/<job>/results.csv`.
 5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The

@@ -25,7 +25,8 @@ If `pilot status` says no runner is connected, tell the human exactly this, then
 
 1. Commit and **push** the code you want to run; uncommitted or unpushed changes do not reach the GPU.
 2. `pilot run <job> script.sh` — sends it and streams the log until it ends; the exit code is the
-   job's exit code. For a long run: `pilot send`, keep working, `pilot wait <job> --follow` later.
+   job's exit code. For a long run: `pilot send`, keep working, `pilot wait <job>` later (without
+   `--follow`, which streams the whole log into your context), then `pilot logs <job> --tail 50`.
 3. Read the log and `.pilot/out/<job>.done` (GPU name, commit, seconds, exit, error).
 4. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output).
    `gpu ok` means nothing was off. `gpu WARN: idle 66% · thermal throttle 12%` lists only what was:
