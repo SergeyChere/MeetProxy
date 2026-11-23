@@ -31,7 +31,8 @@ If `pilot status` says no runner is connected, tell the human exactly this, then
 ## Rules
 
 1. **Check the GPU** in `pilot status` before trusting timings; never compare runs from different
-   GPUs. Put `# gpu: A100` (or L4, T4, …) into jobs whose numbers matter.
+   GPUs. Put `# gpu: A100` (or L4, T4, …) into jobs whose numbers matter, and `# gpu: any` into
+   every job that needs a GPU at all: it is never run on a machine without one.
 2. **Jobs are self-contained bash scripts** run in the project directory: build what they need,
    append one CSV line per measurement to `$PILOT_OUT/results.csv` (pushed during the run).
 3. **Bound everything**: `# timeout: <seconds>` in each job. Estimate time first.

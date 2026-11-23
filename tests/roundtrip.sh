@@ -49,7 +49,8 @@ git checkout -q -b claude/feature && echo v3 > version.txt && git commit -qam v3
 printf 'cat version.txt\n' | $P send b1 - 2> "$T/warn.txt" || true
 { grep -q "not on GitHub" "$T/warn.txt"; } && ok "unpushed branch flagged" || fail "unpushed branch flagged"
 git push -q -u origin claude/feature 2>/dev/null
-printf 'cat version.txt\n' | $P run b2 - --poll 1 --timeout 60 2>/dev/null | grep -q "^v3" && ok "job ran the agent's branch" || fail "job ran the agent's branch"
+printf 'cat version.txt\n' | $P run b2 - --poll 1 --timeout 60 > "$T/b2.txt" 2>&1 || true
+{ grep -q "^v3" "$T/b2.txt"; } && ok "job ran the agent's branch" || { cat "$T/b2.txt" .pilot/out/b1.log 2>/dev/null; fail "job ran the agent's branch"; }
 $P wait b1 --poll 1 --timeout 60 >/dev/null 2>&1 || true
 
 # a job sent while another is running (rebase with a log being written)
@@ -67,6 +68,8 @@ printf '# timeout: 2\nsleep 77 & sleep 77\n' | $P run a6 - --poll 1 --timeout 60
 { grep -q '"error": "timeout"' .pilot/out/a6.done && ! pgrep -f "sleep 77" > /dev/null; } && ok "timeout kills the whole group" || fail "timeout kills the whole group"
 
 printf '# gpu: H100\necho no\n' | $P run a7 - --poll 1 --timeout 60 >/dev/null 2>&1 || true
+printf '# gpu: any\necho no\n' | $P run a7b - --poll 1 --timeout 60 >/dev/null 2>&1 || true
+{ grep -q "wrong gpu" .pilot/out/a7b.done; } && ok "gpu: any refused without a GPU" || fail "gpu: any refused without a GPU"
 { grep -q "wrong gpu" .pilot/out/a7.done; } && ok "wrong GPU refused" || fail "wrong GPU refused"
 
 $P stop > /dev/null

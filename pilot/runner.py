@@ -189,8 +189,9 @@ class Runner:
         timeout = float(header(script, "timeout") or 0) or None
         want = header(script, "gpu")
         done = {"job": name, "start": now(), "gpu": self.gpu}
-        if want and want.lower() != "any" and want.lower() not in self.gpu.lower():
-            done.update(exit=-2, error=f"wrong gpu: want {want}", seconds=0, end=now())
+        no_gpu = self.gpu == "none"
+        if want and (no_gpu or (want.lower() != "any" and want.lower() not in self.gpu.lower())):
+            done.update(exit=-2, error=f"wrong gpu: want {want}, have {self.gpu}", seconds=0, end=now())
             self.finish(name, done)
             self.mb.push(f"{name}: skipped, wrong gpu")
             return
@@ -313,25 +314,48 @@ def start(url, workdir, mailbox):
 
 
 def colab_start(repo, secret="GH_TOKEN", root="/content"):
-    """One-call start in Colab. `repo` is "owner/name"; the token comes from Colab secrets."""
+    """One-call start in Colab. `repo` is "owner/name"; the token comes from Colab secrets.
+    Problems are printed as one plain message (no traceback) and the call returns."""
+    def stop(msg):
+        print("\ncolab-pilot: " + msg + "\n", flush=True)
+
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo or "") or repo == "owner/repo":
-        raise SystemExit("Put your repository as owner/name into REPO, then run the cell again.")
-    tok = os.environ.get(secret)
+        return stop("put your project's repository into REPO as owner/name "
+                    "(for https://github.com/alice/my-kernels: alice/my-kernels), then run again.")
+    tok, why = os.environ.get(secret), ""
     if not tok:
         try:
             from google.colab import userdata
-            tok = userdata.get(secret)
-        except Exception as e:
-            raise SystemExit(f"Add a Colab secret named {secret} (key icon on the left) with a "
-                             f"GitHub fine-grained token for {repo}, Contents: read and write. "
-                             f"({type(e).__name__})")
+            for name in (secret, "GITHUB_TOKEN", "GH_PAT"):
+                try:
+                    tok = userdata.get(name)
+                    break
+                except Exception as e:
+                    why = type(e).__name__
+        except ImportError:
+            why = "not running in Colab"
+    if not tok:
+        if "NotebookAccess" in why:
+            return stop(f"the secret exists but this notebook may not read it: key icon on the left "
+                        f"-> switch on 'Notebook access' for {secret}, then run again.")
+        return stop(f"no GitHub token. Key icon on the left -> 'Add new secret' -> name {secret}, "
+                    f"value: a fine-grained token (github.com/settings/personal-access-tokens/new) "
+                    f"with access to {repo} only, Repository permissions -> Contents: Read and write. "
+                    f"Switch on 'Notebook access', then run again.")
     os.environ[secret] = tok
     gpu = gpu_info()
     if gpu == "none":
         print("WARNING: no GPU. Runtime > Change runtime type > pick a GPU, then run again.")
     url = f"https://x-access-token:{tok}@github.com/{repo}.git"
     name = repo.rstrip("/").split("/")[-1]
-    start(url, os.path.join(root, name), os.path.join(root, ".pilot-mailbox"))
+    try:
+        start(url, os.path.join(root, name), os.path.join(root, ".pilot-mailbox"))
+    except RuntimeError as e:
+        msg = str(e)
+        hint = (f" Check that the token has access to {repo} with Contents: Read and write, "
+                f"and that the name is right.") if "clone" in msg or "403" in msg or "404" in msg \
+            or "not found" in msg.lower() else ""
+        return stop(redact(msg) + hint)
 
 
 def main():
