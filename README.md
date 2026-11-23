@@ -10,7 +10,7 @@ Your AI agent runs experiments on your Colab GPU by itself. You press one button
 
 ## Start
 
-**1. Colab:** click [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyChere/colab-pilot/blob/main/examples/colab_runner.ipynb), then:
+**1. Colab:** click [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyChere/colab-pilot/blob/main/colab_runner.ipynb), then:
 
 - *Runtime → Change runtime type* → pick a GPU;
 - in the notebook's `REPO` field, type **your project's** GitHub repository — the one Claude works
@@ -21,7 +21,7 @@ First time only: key icon on the left → add a secret named `GH_TOKEN` with a G
 [fine-grained token](https://github.com/settings/personal-access-tokens/new) for that same
 repository, *Contents: Read and write*.
 
-The button opens [`examples/colab_runner.ipynb`](examples/colab_runner.ipynb). It is one cell; you can
+The button opens [`colab_runner.ipynb`](colab_runner.ipynb). It is one cell; you can
 also paste it into any Colab notebook yourself:
 
 ```python

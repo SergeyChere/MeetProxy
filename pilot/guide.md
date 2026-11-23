@@ -16,7 +16,7 @@ cd <project repo> && pilot init && pilot status
 If `pilot status` says no runner is connected, tell the human exactly this, then keep working
 (write the benchmark) while you wait:
 
-> Open https://colab.research.google.com/github/SergeyChere/colab-pilot/blob/main/examples/colab_runner.ipynb,
+> Open https://colab.research.google.com/github/SergeyChere/colab-pilot/blob/main/colab_runner.ipynb,
 > pick a GPU runtime, put `<owner/repo>` in the form, Run all.
 > First time only: add a Colab secret `GH_TOKEN` — a GitHub fine-grained token for this repo,
 > Contents: read and write.
