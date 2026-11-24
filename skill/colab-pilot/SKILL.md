@@ -40,8 +40,9 @@ Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
    - short job: `pilot run s01_bench job.sh` — sends, streams the log, exits with the job's exit code;
    - long job: `pilot send s01_bench job.sh`, keep working, later `pilot wait s01_bench` (without
      `--follow`: it would stream the whole log into your context), then `pilot logs s01_bench --tail 50`.
-4. Read the result: the log, `.pilot/out/<job>.done` (exit code, seconds, GPU, commit) and
-   `.pilot/out/<job>/results.csv`.
+4. Read the result: the log, `.pilot/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
+   and `.pilot/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
+   fetched or checked out (unpushed branch, typo in `# branch:`) — fix that, resend under a new name.
 5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
    runner samples the GPU during every job and reports only what was off:
    - `gpu ok: util 97%, mem 41%, 68°C` — nothing to worry about;
@@ -96,5 +97,6 @@ See `reference/troubleshooting.md` when something does not work.
 ## What this skill does on the network
 
 Installs a Python package from GitHub, and runs `git fetch/pull/push` against the user's own
-repository (branch `pilot`). Nothing else. The Colab side executes whatever is pushed to
+repository (branch `pilot`). Nothing else. Jobs never receive the GitHub token; secrets are masked
+in logs and result files before they are pushed. The Colab side executes whatever is pushed to
 `cmd/`, so only trusted people should have write access to the repository.

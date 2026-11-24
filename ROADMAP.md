@@ -1,7 +1,7 @@
 # Roadmap
 
 What is done, what comes next, and why in that order. Reliability and security come before new
-features; a public release comes after the known defects are fixed and a real case is shown.
+features; a public release comes after hardening and a real case is shown.
 
 ```mermaid
 flowchart LR
@@ -41,18 +41,19 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 | ✅ | **M3 Run history** | `out/history.csv`, `pilot history` |
 | ✅ | **M4 Human reports** | `# charts: on` → `report.md` + SVG charts, drawn on the GPU side, no agent tokens |
 | ✅ | **M5 Export** | `pilot export` → `pilot-runs/`, nothing committed |
+| ✅ | **M6 Hardening** | credentials isolation, exact-commit runs, reliable delivery, trust model |
 | ✅ | **Tests and CI** | unit, CLI and end-to-end suite, 99% coverage, CI on every push |
 
 ## Fix first
 
-### 🔜 M6 — 0.5: hardening
+### ✅ M6 — 0.5: hardening
 
-- [ ] Hardening of credentials handling and job isolation.
-- [ ] Stricter guarantees that each job runs exactly the pushed commit.
-- [ ] More robust result delivery.
-- [ ] A documented trust model.
+- [x] Hardening of credentials handling and job isolation.
+- [x] Stricter guarantees that each job runs exactly the pushed commit.
+- [x] More robust result delivery.
+- [x] A documented trust model ([README](README.md#trust-and-security)).
 
-### ⬜ M7 — 0.5.1: quick reliability fixes
+### 🔜 M7 — 0.5.1: quick reliability fixes
 
 - [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of crashing the runner.
 - [ ] Timeouts on every git command: a hung network cannot freeze the runner.

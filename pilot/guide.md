@@ -27,7 +27,9 @@ If `pilot status` says no runner is connected, tell the human exactly this, then
 2. `pilot run <job> script.sh` — sends it and streams the log until it ends; the exit code is the
    job's exit code. For a long run: `pilot send`, keep working, `pilot wait <job>` later (without
    `--follow`, which streams the whole log into your context), then `pilot logs <job> --tail 50`.
-3. Read the log and `.pilot/out/<job>.done` (GPU name, commit, seconds, exit, error).
+3. Read the log and `.pilot/out/<job>.done` (GPU name, full commit SHA, seconds, exit, error).
+   `exit -3` means the job did not run: its commit could not be fetched or checked out (unpushed
+   branch, typo in `# branch:`) — fix that and send it again under a new name.
 4. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output).
    `gpu ok` means nothing was off. `gpu WARN: idle 66% · thermal throttle 12%` lists only what was:
    idle / low util → the GPU waits for CPU, data or copies; throttle or unstable SM clock → timings

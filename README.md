@@ -76,6 +76,17 @@ Charts for every job without asking: in the Colab cell, add
 **Or as a skill:** copy [`skill/colab-pilot`](skill/colab-pilot) into `.claude/skills/` (or your
 agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
 
+## Trust and security
+
+- **The notebook runs what is pushed to the `pilot` branch.** Give write access to the repository
+  only to people and agents you trust. Job code runs with the Colab user's rights.
+- **Jobs never get your GitHub token.** The runner keeps it out of job environments, out of git
+  remote URLs and out of config files; secrets are masked in logs and in every result file before
+  it is pushed. Use a fine-grained token limited to this one repository.
+- **Each job runs exactly the pushed commit** of its branch; if that commit cannot be fetched and
+  checked out, the job does not run (`exit -3`) and `.done` says why. `.done` records the full SHA.
+- **In a public repository, logs and results on branch `pilot` are public too.**
+
 ---
 
 [Why it exists](docs/WHY.md) · [How it works](docs/HOW-IT-WORKS.md) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · Only people you trust should have

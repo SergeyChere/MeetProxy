@@ -81,8 +81,20 @@ Loop: `pull → pick next job → git pull the project → run → push`, plus a
   measurement is the most expensive bug we hit in practice.
 - **Streaming.** Output goes to `out/<job>.log`; a background thread pushes it every `PUSH_S`
   (default 45 s), so the agent can read progress of an hour-long job.
-- **Redaction.** Values of every env var whose name contains `TOKEN`, `SECRET`, `KEY` or `PASSWORD`
-  are replaced by `***` before anything is written to `out/`.
+- **Redaction.** Values of every env var whose name contains `TOKEN`, `SECRET`, `KEY` or `PASSWORD`,
+  plus the runner's own git credentials, are replaced by `***` in the log and in every file copied
+  from `$PILOT_OUT` (binary files too) before anything is pushed.
+- **Credentials.** `colab_start` hands the token to git as an `Authorization` header through
+  `GIT_CONFIG_*` variables of the runner process (`use_token`): remotes are plain
+  `https://github.com/owner/repo.git`, no token in URLs or `.git/config` (an old token URL is
+  replaced on start). Jobs get the environment without `GH_TOKEN`, `GITHUB_TOKEN`, `GH_PAT`,
+  `GIT_CONFIG_*` or any variable holding those values (`job_env`). Jobs still run as the same OS
+  user as the runner, so the job code itself must be trusted: that is the README's trust model.
+- **Exact commit.** Before each job the runner fetches (3 tries) and checks out
+  `origin/<branch>`; if either fails, the job is not run: `.done` gets `exit -3` and
+  `fetch failed…` / `checkout failed…`. Otherwise `.done` records the full SHA in `commit`.
+- **Delivery.** `Mailbox.push` treats a local commit that never reached the remote as pending:
+  the next push sends it, and success is reported only when nothing is left unpushed.
 - **Idle limit.** No new job for `IDLE_MIN` minutes (default 120) → exit. The runner never deletes
   or disconnects the runtime: that is the human's decision.
 - **Budget limit.** `MAX_HOURS` (default 12) of wall time → finish the current job and exit.

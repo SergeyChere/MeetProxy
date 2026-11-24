@@ -124,11 +124,13 @@ def test_stop_only_stops_runners_started_before_it(rn):
 
 
 def test_update_workdir(rn, world):
-    msg = rn.update_workdir()
-    assert msg.startswith("code ") and "v1" in msg and "(default branch)" in msg
-    assert "CHECKOUT FAILED" in rn.update_workdir("no-such-branch")
+    err, msg, sha = rn.update_workdir()
+    assert err is None and msg.startswith("code ") and "v1" in msg and "(default branch)" in msg
+    assert len(sha) == 40
+    err, msg, sha = rn.update_workdir("no-such-branch")
+    assert err.startswith("checkout failed: origin/no-such-branch") and sha is None
     rn.workdir = str(world.tmp)
-    assert rn.update_workdir() == "workdir is not a git repo"
+    assert rn.update_workdir() == (None, "workdir is not a git repo", None)
 
 
 def test_workdir_falls_back_to_cwd(world, no_gpu):
@@ -287,11 +289,14 @@ def test_colab_start_reads_fallback_secret_and_starts(monkeypatch, capsys, no_gp
     _fake_colab(monkeypatch, secrets={"GITHUB_TOKEN": "tok12345678"})
     seen = {}
     monkeypatch.setattr(R, "start", lambda url, wd, mb: seen.update(url=url, wd=wd, mb=mb))
+    monkeypatch.setattr(R, "EXTRA_SECRETS", [])
+    for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+        monkeypatch.delenv(k, raising=False)
     R.colab_start("alice/kernels", root="/content")
-    assert seen["url"] == "https://x-access-token:tok12345678@github.com/alice/kernels.git"
+    assert seen["url"] == "https://github.com/alice/kernels.git"
     assert seen["wd"] == "/content/kernels" and seen["mb"] == "/content/.pilot-mailbox"
     assert "WARNING: no GPU" in capsys.readouterr().out
-    assert os.environ["GH_TOKEN"] == "tok12345678"
+    assert "tok12345678" in R.EXTRA_SECRETS and "GH_TOKEN" not in os.environ
 
 
 def test_colab_start_clone_failure_is_one_redacted_message(monkeypatch, capsys, fake_gpu):

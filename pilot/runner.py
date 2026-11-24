@@ -8,7 +8,7 @@ The mailbox is the branch `pilot` of your own project repository; it is created 
 Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12 GPU_SAMPLE_S=1
 PILOT_CHARTS=1 makes a human report for every job (otherwise only for `# charts: on`).
 """
-import json, os, re, shutil, signal, subprocess, threading, time
+import base64, json, os, re, shutil, signal, subprocess, threading, time
 
 try:
     from pilot import history, report, telemetry
@@ -16,7 +16,7 @@ except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.4.2"
+VERSION = "0.5.0"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -25,8 +25,42 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+EXTRA_SECRETS = []  # values to mask that are not in a secret-looking variable (git auth header)
+TOKEN_VARS = {"GH_TOKEN", "GITHUB_TOKEN", "GH_PAT"}
+
+
 def secrets():
-    return [v for k, v in os.environ.items() if SECRET_RE.search(k) and len(v) >= 8]
+    env = [v for k, v in os.environ.items() if SECRET_RE.search(k) and len(v) >= 8]
+    return env + [v for v in EXTRA_SECRETS if v not in env]
+
+
+def use_token(tok):
+    """Authenticate the runner's own git calls to GitHub without putting the token in any URL or
+    config file: git reads an Authorization header from GIT_CONFIG_* variables, which jobs never
+    get (see job_env)."""
+    b64 = base64.b64encode(f"x-access-token:{tok}".encode()).decode()
+    os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
+                      GIT_CONFIG_VALUE_0=f"Authorization: Basic {b64}")
+    EXTRA_SECRETS.extend(v for v in (tok, b64) if v not in EXTRA_SECRETS)
+
+
+def job_env(**extra):
+    """The runner's environment minus every credential the runner itself uses."""
+    drop = set(EXTRA_SECRETS)
+    env = {k: v for k, v in os.environ.items()
+           if k not in TOKEN_VARS and not k.startswith("GIT_CONFIG_") and v not in drop}
+    env.update(extra)
+    return env
+
+
+def copy_redacted(src, dst, vals):
+    """Copy a file, replacing every secret value (also inside binary files) with ***."""
+    with open(src, "rb") as f:
+        data = f.read()
+    for v in vals:
+        data = data.replace(v.encode(), b"***")
+    with open(dst, "wb") as f:
+        f.write(data)
 
 
 def redact(text, vals=None):
@@ -106,18 +140,25 @@ class Mailbox:
     live outside the clone and are copied into out/ inside push(), so git never rewrites a file
     a job holds open."""
 
-    def __init__(self, path):
+    def __init__(self, path, secrets=None):
         self.path = path
         self.lock = threading.Lock()
         self.live = {}  # path inside out/ -> live file or directory outside the clone
+        self.secrets = secrets or []
 
     def sync(self):
+        """Copy live job files into out/, masking secrets: what a job writes is pushed, and a job
+        may print its environment into a results file by accident."""
         for dest, src in self.live.items():
             dst = self.p("out", dest)
             if os.path.isdir(src):
-                shutil.copytree(src, dst, dirs_exist_ok=True)
+                for root, _, files in os.walk(src):
+                    rel = os.path.relpath(root, src)
+                    os.makedirs(os.path.join(dst, rel), exist_ok=True)
+                    for f in files:
+                        copy_redacted(os.path.join(root, f), os.path.join(dst, rel, f), self.secrets)
             elif os.path.exists(src):
-                shutil.copyfile(src, dst)
+                copy_redacted(src, dst, self.secrets)
 
     def _rebase_pull(self):
         r = git(self.path, *IDENT, "-c", "rebase.autoStash=true", "pull", "-q", "--rebase",
@@ -136,9 +177,10 @@ class Mailbox:
         with self.lock:
             self.sync()
             git(self.path, "add", "-A", "out")
-            if git(self.path, "diff", "--cached", "--quiet", check=False).returncode == 0:
-                return True
-            git(self.path, *IDENT, "commit", "-q", "-m", msg)
+            if git(self.path, "diff", "--cached", "--quiet", check=False).returncode != 0:
+                git(self.path, *IDENT, "commit", "-q", "-m", msg)
+            elif not self.unpushed():
+                return True  # nothing new and nothing left over from a failed push
             for _ in range(5):
                 p = git(self.path, "push", "-q", check=False)
                 if p.returncode == 0:
@@ -148,6 +190,11 @@ class Mailbox:
             print(f"[{now()}] warning: push failed, will retry later: "
                   f"{redact(p.stderr.strip())[:300]}", flush=True)
             return False
+
+    def unpushed(self):
+        """Local commits not on the remote yet (left by a push that failed)."""
+        r = git(self.path, "rev-list", "--count", "@{u}..HEAD", check=False)
+        return r.returncode != 0 or r.stdout.strip() != "0"
 
     def p(self, *parts):
         return os.path.join(self.path, *parts)
@@ -164,6 +211,7 @@ class Runner:
         self.idle, self.max_s = env("IDLE_MIN", 120) * 60, env("MAX_HOURS", 12) * 3600
         self.gpu = gpu_info()
         self.secrets = secrets()
+        self.mb.secrets = self.secrets
         self.state, self.job = "starting", None
         self.t_start = time.time()
         os.makedirs(self.mb.p("out"), exist_ok=True)
@@ -192,18 +240,25 @@ class Runner:
         return sent > self.t_start
 
     def update_workdir(self, branch=None):
-        """Check out the newest pushed commit of `branch` (default: the remote default branch),
-        so what runs is exactly what the agent pushed."""
+        """Check out the newest pushed commit of `branch` (default: the remote default branch).
+        Returns (error or None, description, full sha): a job must run exactly what the agent
+        pushed, so a failed fetch or checkout means the job does not run at all."""
         if not os.path.isdir(os.path.join(self.workdir, ".git")):
-            return "workdir is not a git repo"
-        git(self.workdir, "fetch", "-q", "--prune", "origin", check=False)
+            return None, "workdir is not a git repo", None
+        for attempt in range(3):
+            f = git(self.workdir, "fetch", "-q", "--prune", "origin", check=False)
+            if f.returncode == 0:
+                break
+            time.sleep(2 * attempt)
+        else:
+            return f"fetch failed: {redact(f.stderr.strip())[:300]}", "", None
         target = f"origin/{branch}" if branch else "origin/HEAD"
         r = git(self.workdir, "checkout", "-q", "--force", "--detach", target, check=False)
-        head = git(self.workdir, "log", "-1", "--format=%h %s", check=False).stdout.strip()
-        msg = f"code {head} ({branch or 'default branch'})"
         if r.returncode:
-            msg += f" CHECKOUT FAILED: {redact(r.stderr.strip())}"
-        return msg
+            return f"checkout failed: {target}: {redact(r.stderr.strip())[:300]}", "", None
+        sha = git(self.workdir, "rev-parse", "HEAD", check=False).stdout.strip()
+        head = git(self.workdir, "log", "-1", "--format=%h %s", check=False).stdout.strip()
+        return None, f"code {head} ({branch or 'default branch'})", sha
 
     def finish(self, name, done):
         with open(self.mb.p("out", name + ".done"), "w") as f:
@@ -234,7 +289,14 @@ class Runner:
             self.finish(name, done)
             self.mb.push(f"{name}: skipped, wrong gpu")
             return
-        done["code"] = self.update_workdir(header(script, "branch"))
+        err, done["code"], sha = self.update_workdir(header(script, "branch"))
+        if sha:
+            done["commit"] = sha
+        if err:
+            done.update(exit=-3, error=err, seconds=0, end=now())
+            self.finish(name, done)
+            self.mb.push(f"{name}: not run, {err.split(':')[0]}")
+            return
         live = self.mb.path.rstrip("/") + ".live"
         outdir, logpath = os.path.join(live, name), os.path.join(live, name + ".log")
         os.makedirs(outdir, exist_ok=True)
@@ -248,7 +310,7 @@ class Runner:
         if resumed and not os.path.exists(logpath):
             shutil.copyfile(self.mb.p("out", name + ".log"), logpath)
         self.mb.live = {name: outdir, name + ".log": logpath}
-        env = dict(os.environ, COLAB_PILOT="1", PILOT_OUT=outdir, PILOT_JOB=name)
+        env = job_env(COLAB_PILOT="1", PILOT_OUT=outdir, PILOT_JOB=name)
         t0 = time.time()
         self.state, self.job = "running", name
         self.heartbeat()
@@ -391,6 +453,7 @@ def kill(proc):
 def start(url, workdir, mailbox):
     """Clone/update the project at `workdir`, open the mailbox at `mailbox`, run until stopped."""
     if os.path.isdir(os.path.join(workdir, ".git")):
+        git(workdir, "remote", "set-url", "origin", url, check=False)  # drop old token URLs
         git(workdir, "pull", "-q", "--ff-only", check=False)
     else:
         r = subprocess.run(["git", "clone", "-q", url, workdir], capture_output=True, text=True)
@@ -429,11 +492,11 @@ def colab_start(repo, secret="GH_TOKEN", root="/content"):
                     f"value: a fine-grained token (github.com/settings/personal-access-tokens/new) "
                     f"with access to {repo} only, Repository permissions -> Contents: Read and write. "
                     f"Switch on 'Notebook access', then run again.")
-    os.environ[secret] = tok
+    use_token(tok)
     gpu = gpu_info()
     if gpu == "none":
         print("WARNING: no GPU. Runtime > Change runtime type > pick a GPU, then run again.")
-    url = f"https://x-access-token:{tok}@github.com/{repo}.git"
+    url = f"https://github.com/{repo}.git"
     name = repo.rstrip("/").split("/")[-1]
     try:
         start(url, os.path.join(root, name), os.path.join(root, ".pilot-mailbox"))

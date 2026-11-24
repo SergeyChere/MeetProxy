@@ -21,6 +21,10 @@ def git_isolation(monkeypatch, tmp_path):
     monkeypatch.delenv("PILOT_DIR", raising=False)
     monkeypatch.delenv("PILOT_CHARTS", raising=False)
     monkeypatch.setenv("PYTHONPATH", ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GH_TOKEN"):
+        monkeypatch.delenv(k, raising=False)            # git auth set by use_token() in a test
+    from pilot import runner
+    monkeypatch.setattr(runner, "EXTRA_SECRETS", [])
 
 
 def git(cwd, *args, check=True):
