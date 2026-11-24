@@ -6,7 +6,7 @@ features; a public release comes after the known defects are fixed and a real ca
 ```mermaid
 flowchart LR
     D["✅ Done<br/>M0–M5<br/>telemetry · skill · docs<br/>history · reports · export<br/>tests + CI"]
-    F["🛡️ Fix first<br/>M6–M8<br/>security · reliability<br/>job lifecycle"]
+    F["🛡️ Harden<br/>M6–M8<br/>hardening · reliability<br/>job lifecycle"]
     P["🔬 Prove it<br/>M9–M10<br/>real GPU check<br/>real demo case"]
     A["⚙️ Automate<br/>M11–M12<br/>idle release<br/>Colab API"]
     R["🚀 Release<br/>M13"]
@@ -45,20 +45,12 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 
 ## Fix first
 
-Found by an external code review (23 Nov 2026, v0.4.2) and confirmed against the code.
+### 🔜 M6 — 0.5: hardening
 
-### 🔜 M6 — 0.5: security and critical defects
-
-- [ ] The job never sees the GitHub token: drop `GH_TOKEN` / `GITHUB_TOKEN` from the job's
-      environment; keep the token in a git credential helper, not in the remote URL.
-- [ ] Mask secrets in files from `$PILOT_OUT` before pushing, not only in logs.
-- [ ] A job does not run unless the exact commit was fetched and checked out; `.done` records the
-      full SHA. (Today a failed fetch or checkout runs the old code with a warning.)
-- [ ] Honest push: "pushed" only when the commit is on GitHub. (Today a failed push is followed by
-      a "nothing to commit" success.)
-- [ ] Trust model in the README: who can run what, what is visible in a public repository.
-
-Done when: each of the three defects has a test that failed before and passes now.
+- [ ] Hardening of credentials handling and job isolation.
+- [ ] Stricter guarantees that each job runs exactly the pushed commit.
+- [ ] More robust result delivery.
+- [ ] A documented trust model.
 
 ### ⬜ M7 — 0.5.1: quick reliability fixes
 
@@ -105,7 +97,7 @@ compute-unit balance. Colab Enterprise already offers the same through `gcloud c
 
 ### ⬜ M13 — Publish the free skill
 
-On skill marketplaces, after M6–M10: no release with a known token leak.
+On skill marketplaces, after M6–M10.
 
 ## Widen
 
