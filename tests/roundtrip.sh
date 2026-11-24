@@ -102,6 +102,18 @@ for i in $(seq 30); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done
 { ! kill -0 $RUNNER 2>/dev/null; } && ok "stop ends the runner" || fail "stop ends the runner"
 { grep -q "Runner exited (stopped)" <<< "$($P status)"; } && ok "status explains the stop" || fail "status explains the stop"
 
+# a machine dies in the middle of a job: a new machine (empty disk) must resume from what was pushed
+printf 'touch $PILOT_OUT/r.csv\nn=$(wc -l < $PILOT_OUT/r.csv)\necho line$n >> $PILOT_OUT/r.csv\necho run$n\nsleep 30\n' | $P send r1 - 2>/dev/null
+start_runner 3
+for i in $(seq 40); do git -C .pilot pull -q --rebase 2>/dev/null; [ -s .pilot/out/r1/r.csv ] && break; sleep 1; done
+kill -9 $RUNNER; pkill -9 -f "sleep 30" || true; rm -rf "$T/colab/mb.live" "$T/colab/mb"
+start_runner 4
+$P wait r1 --poll 1 --timeout 90 > /dev/null 2>&1 || true
+{ grep -q line0 .pilot/out/r1/r.csv && grep -q line1 .pilot/out/r1/r.csv; } && ok "new machine resumes pushed job files" || { cat .pilot/out/r1/r.csv; fail "new machine resumes pushed job files"; }
+{ grep -q "(resumed)" .pilot/out/r1.log; } && ok "log marks the resume" || fail "log marks the resume"
+$P stop > /dev/null
+for i in $(seq 40); do kill -0 $RUNNER 2>/dev/null || break; sleep 1; done
+
 # a new runner (next evening) must not be blocked by the old STOP
 start_runner 2
 { printf 'echo again\n' | $P run a8 - --poll 1 --timeout 60 2>/dev/null | grep again >/dev/null; } && ok "restart after stop works" || fail "restart after stop works"

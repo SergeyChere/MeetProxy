@@ -16,7 +16,7 @@ except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -238,6 +238,15 @@ class Runner:
         live = self.mb.path.rstrip("/") + ".live"
         outdir, logpath = os.path.join(live, name), os.path.join(live, name + ".log")
         os.makedirs(outdir, exist_ok=True)
+        # resume on a new machine: files this job already pushed are the starting point, so a job
+        # that skips finished work (e.g. parts already in results.csv) does not redo it and its
+        # pushed results are never overwritten by an empty copy
+        pushed = self.mb.p("out", name)
+        if os.path.isdir(pushed) and not os.listdir(outdir):
+            shutil.copytree(pushed, outdir, dirs_exist_ok=True)
+        resumed = os.path.exists(self.mb.p("out", name + ".log"))
+        if resumed and not os.path.exists(logpath):
+            shutil.copyfile(self.mb.p("out", name + ".log"), logpath)
         self.mb.live = {name: outdir, name + ".log": logpath}
         env = dict(os.environ, COLAB_PILOT="1", PILOT_OUT=outdir, PILOT_JOB=name)
         t0 = time.time()
@@ -249,8 +258,9 @@ class Runner:
         sampler = None
         if not no_gpu and (header(script, "telemetry") or "on").lower() != "off":
             sampler = telemetry.Sampler(os.path.join(outdir, "gpu.csv")).start()
-        with open(logpath, "w") as log:
-            log.write(f"# colab-pilot: {name} on {self.gpu}; {done['code']}\n")
+        with open(logpath, "a") as log:
+            log.write(f"# colab-pilot: {name} on {self.gpu}; {done['code']}"
+                      f"{' (resumed)' if resumed else ''}\n")
             proc = subprocess.Popen(["bash", "-c", script], cwd=self.workdir, env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, start_new_session=True)
