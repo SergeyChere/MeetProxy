@@ -1,0 +1,10 @@
+variant,run,ms
+baseline,1,41.5
+baseline,2,41.8
+baseline,3,42.1
+tiled,1,24.2
+tiled,2,24.5
+tiled,3,24.8
+tiled_fp16,1,14.4
+tiled_fp16,2,14.7
+tiled_fp16,3,15.0

@@ -137,3 +137,13 @@ def test_no_matplotlib(monkeypatch, tmp_path):
         monkeypatch.delitem(sys.modules, m)
     with pytest.raises(P.NoMatplotlib, match="pip install matplotlib"):
         P.gpu_chart(str(tmp_path / "x.csv"), str(tmp_path / "x.svg"))
+
+
+def test_example_report_in_docs_is_current():
+    """README links docs/example-report/report.md: it must exist and show what a report shows."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    md = open(os.path.join(root, "docs", "example-report", "report.md")).read()
+    assert "made-up data" in md and "![GPU telemetry](charts/gpu.svg)" in md and "## Results" in md
+    assert os.path.getsize(os.path.join(root, "docs", "example-report", "charts", "gpu.svg")) > 10_000
+    readme = open(os.path.join(root, "README.md")).read()
+    assert "docs/example-report/report.md" in readme

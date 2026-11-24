@@ -39,9 +39,39 @@ pilot.runner.colab_start(REPO)
 
 Done. To stop: ■ in Colab. Shut the runtime down yourself when finished.
 
-**Results:** branch `pilot` of your repo, folder `out/`. Ask the agent for *charts* and you get a
-`report.md` with GPU graphs there (made on the GPU side, no agent tokens); `pilot history` lists
-every run; `pilot export` copies results next to your code.
+## Logs, GPU metrics and reports
+
+Logs and GPU metrics are **always on** — nothing to enable. Charts are made only when you ask.
+
+| What | How to get it | Where it is |
+|---|---|---|
+| Job log | always | the agent reads it; you: branch `pilot` → `out/<job>.log` |
+| GPU metrics | always | the agent gets one line (`gpu ok: util 97%, mem 41%, 68°C` or `gpu WARN: idle 66% · thermal throttle 12%`); every sample: `out/<job>/gpu.csv` |
+| Run history | always | `out/history.csv`; the agent reads it with `pilot history` |
+| **Report with charts** | ask for it (examples below) | `out/<job>/report.md` and `out/history.md` |
+| Copy next to your code | *"export the results"* | `pilot-runs/` in your project, not committed |
+
+**What you say to the agent:**
+
+> Run the benchmark on my Colab GPU **with charts**.
+
+> Make a **report** of the last run.
+
+> Show me the **history** of all runs as a report.
+
+> **Export** the results of today's runs into the project.
+
+**What you get:** a page like [this example report](docs/example-report/report.md) (made-up
+data) — the GPU graphs over time (utilization, memory, clock with throttling shaded red,
+temperature and power), the job's results table and the end of its log.
+
+**Why it costs no tokens:** the charts are drawn by matplotlib on the Colab machine and pushed to
+GitHub. The agent only tells you where the report is — it is told never to open it — so it does
+not spend tokens reading pictures or long tables. To see it: your repo on GitHub → switch the
+branch from `main` to `pilot` → `out/` → `<job>/report.md`. Works on a phone.
+
+Charts for every job without asking: in the Colab cell, add
+`import os; os.environ["PILOT_CHARTS"] = "1"` before `pilot.runner.colab_start(REPO)`.
 
 **Or as a skill:** copy [`skill/colab-pilot`](skill/colab-pilot) into `.claude/skills/` (or your
 agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
