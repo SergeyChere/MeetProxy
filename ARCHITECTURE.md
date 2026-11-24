@@ -178,13 +178,4 @@ before `wait` checks the heartbeat).
 
 ## 8. Roadmap
 
-- Opt-in release of the runtime after N idle minutes (`google.colab.runtime.unassign()`), so
-  compute units are not burnt while nobody uses the GPU. Off by default: today that decision is
-  the human's.
-- Colab API (beta, allowlist): `create_runtime` with the GPU a job asks for, start the runner with
-  `execute_code`, `delete_runtime` when the queue is empty, `get_subscription` for the compute-unit
-  balance — no notebook, no button. Colab Enterprise has the same via `gcloud colab runtimes`.
-- Later, after Colab is solid: Kaggle, local Jupyter runtime, plain cloud VM.
-- `pilot bench`: repeat a job N times, report median and spread.
-- Artifacts larger than git likes: optional upload to a GCS/HF bucket, link in `.done`.
-- Several runners on one mailbox (job claiming via `out/<job>.claim` commits).
+See [ROADMAP.md](ROADMAP.md): what is done, what comes next and why in that order.

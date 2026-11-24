@@ -78,5 +78,5 @@ agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
 
 ---
 
-[Why it exists](docs/WHY.md) · [How it works](docs/HOW-IT-WORKS.md) · [Architecture](ARCHITECTURE.md) · Only people you trust should have
+[Why it exists](docs/WHY.md) · [How it works](docs/HOW-IT-WORKS.md) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · Only people you trust should have
 write access to the repository: the notebook runs what is pushed to its `pilot` branch. · MIT

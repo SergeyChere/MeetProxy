@@ -6,3 +6,4 @@ end-to-end tests in `tests/test_*.py`, plus `tests/roundtrip.sh` and `tests/skil
 it on every push) and add a test with every change — a bug fix starts with a test that fails. Keep
 the docs in sync — `skill/colab-pilot/SKILL.md` is a standalone copy of `pilot/guide.md` for skill
 marketplaces; change both. `scripts/build_skill.sh` builds the upload zip in `dist/`.
+When a milestone item is done, tick it in `ROADMAP.md` in the same commit.
