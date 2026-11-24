@@ -16,7 +16,7 @@ except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -242,8 +242,8 @@ class Runner:
         # that skips finished work (e.g. parts already in results.csv) does not redo it and its
         # pushed results are never overwritten by an empty copy
         pushed = self.mb.p("out", name)
-        if os.path.isdir(pushed) and not os.listdir(outdir):
-            shutil.copytree(pushed, outdir, dirs_exist_ok=True)
+        if os.path.isdir(pushed):
+            seed_from_pushed(pushed, outdir)
         resumed = os.path.exists(self.mb.p("out", name + ".log"))
         if resumed and not os.path.exists(logpath):
             shutil.copyfile(self.mb.p("out", name + ".log"), logpath)
@@ -364,6 +364,21 @@ class Runner:
             self.mb.push(f"runner exit: {self.state}")
             print(f"colab-pilot exit: {self.state}. The runtime is still on; "
                   f"shut it down yourself when done.", flush=True)
+
+
+def seed_from_pushed(pushed, live):
+    """Before a job (re)starts, take every file it already pushed unless the local copy is at least
+    as large: on a new machine the local copy is missing, on the same machine after a restart it
+    may be stale (e.g. an empty results file left by an earlier attempt). Results files only grow,
+    so the larger copy is the newer one."""
+    for root, _, files in os.walk(pushed):
+        rel = os.path.relpath(root, pushed)
+        for f in files:
+            src = os.path.join(root, f)
+            dst = os.path.normpath(os.path.join(live, rel, f))
+            if not os.path.exists(dst) or os.path.getsize(dst) < os.path.getsize(src):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(src, dst)
 
 
 def kill(proc):

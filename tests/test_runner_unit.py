@@ -344,3 +344,19 @@ def test_telemetry_crash_does_not_lose_the_job(world, fake_gpu, monkeypatch):
     r.run_job("t")
     d = json.load(open(r.mb.p("out", "t.done")))
     assert d["exit"] == 0 and d["gpu_stats"]["error"] == "sampler broke"
+
+
+def test_seed_from_pushed_prefers_the_larger_copy(tmp_path):
+    from pilot.runner import seed_from_pushed
+    pushed, live = tmp_path / "pushed", tmp_path / "live"
+    (pushed / "charts").mkdir(parents=True)
+    (pushed / "results.csv").write_text("h\nline0\nline1\n")
+    (pushed / "charts" / "a.svg").write_text("<svg/>")
+    (pushed / "small.txt").write_text("x")
+    live.mkdir()
+    (live / "results.csv").write_text("h\n")          # stale copy from an earlier attempt
+    (live / "small.txt").write_text("newer and longer")  # local copy already ahead
+    seed_from_pushed(str(pushed), str(live))
+    assert (live / "results.csv").read_text() == "h\nline0\nline1\n"
+    assert (live / "charts" / "a.svg").read_text() == "<svg/>"
+    assert (live / "small.txt").read_text() == "newer and longer"

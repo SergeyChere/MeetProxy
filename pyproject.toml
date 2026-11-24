@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "colab-pilot"
-version = "0.4.1"
+version = "0.4.2"
 description = "Let an AI agent run GPU experiments in Google Colab through a git mailbox"
 readme = "README.md"
 license = {text = "MIT"}
