@@ -3,7 +3,7 @@ import builtins, os, sys
 
 import pytest
 
-from pilot import history as H, report as P
+from meetproxy import history as H, report as P
 
 
 def done(job="j1", **kw):

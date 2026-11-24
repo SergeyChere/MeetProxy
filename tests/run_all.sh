@@ -9,11 +9,11 @@ export GIT_CONFIG_GLOBAL=/dev/null   # never touch the user's git config
 if [ "${1:-}" = "--coverage" ]; then
   # measure subprocesses too (runner and CLI run as separate processes in the tests)
   SP=$(python3 -c "import site; print(site.getsitepackages()[0])")
-  PTH="$SP/zz_colab_pilot_cov.pth"
+  PTH="$SP/zz_meetproxy_cov.pth"
   echo "import coverage; coverage.process_startup()" > "$PTH"
   trap 'rm -f "$PTH"' EXIT
-  sed "s#^data_file = .*#data_file = $ROOT/.coverage#" .coveragerc > /tmp/colab-pilot-covrc
-  export COVERAGE_PROCESS_START=/tmp/colab-pilot-covrc
+  sed "s#^data_file = .*#data_file = $ROOT/.coverage#" .coveragerc > /tmp/meetproxy-covrc
+  export COVERAGE_PROCESS_START=/tmp/meetproxy-covrc
   rm -f .coverage .coverage.*
 fi
 
@@ -22,7 +22,7 @@ bash tests/roundtrip.sh
 bash tests/skill_smoke.sh
 
 if [ "${1:-}" = "--coverage" ]; then
-  python3 -m coverage combine -q --rcfile=/tmp/colab-pilot-covrc
-  python3 -m coverage report -i --rcfile=/tmp/colab-pilot-covrc --omit='*/venv/*,*/site-packages/*'
+  python3 -m coverage combine -q --rcfile=/tmp/meetproxy-covrc
+  python3 -m coverage report -i --rcfile=/tmp/meetproxy-covrc --omit='*/venv/*,*/site-packages/*'
 fi
 echo "all tests passed"

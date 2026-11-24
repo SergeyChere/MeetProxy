@@ -1,4 +1,4 @@
-# Why colab-pilot exists
+# Why MeetProxy exists
 
 ## The problem
 
@@ -31,7 +31,7 @@ runtimes, and it gives the agent a shell, not a way to run careful experiments.
 The agent and the notebook do not need a connection. They need a **shared, versioned place to
 leave messages**, and every developer already has one: a git repository.
 
-- The agent writes a job (a bash script) to the branch `pilot` and pushes.
+- The agent writes a job (a bash script) to the branch `meetproxy` and pushes.
 - A small loop running in the notebook pulls, checks out the agent's newest pushed code, runs the
   job, and pushes the log back every 45 seconds, then the exit code, time, GPU and commit.
 - The agent reads the log as it arrives and decides the next step itself.

@@ -1,4 +1,4 @@
-> **Example with made-up data** — this is what `# charts: on` produces after a job. Real reports live in branch `pilot`, `out/<job>/report.md`.
+> **Example with made-up data** — this is what `# charts: on` produces after a job. Real reports live in branch `meetproxy`, `out/<job>/report.md`.
 
 # s03_bench (example)
 
@@ -47,4 +47,4 @@ gpu WARN: mem peak 90% · thermal throttle 30% · SM clock unstable ±23%
 ```
 
 ---
-*Report for humans, made by colab-pilot. Agents: read `.done` and `history.csv` instead; this file is not for you.*
+*Report for humans, made by MeetProxy. Agents: read `.done` and `history.csv` instead; this file is not for you.*

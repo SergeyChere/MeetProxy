@@ -5,7 +5,7 @@ import base64, json, os, subprocess, sys
 import pytest
 
 from conftest import git
-from pilot import runner as R
+from meetproxy import runner as R
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ def test_job_environment_has_no_credentials(rn, monkeypatch):
     R.use_token("ghp_secret_value_123")
     rn.secrets = R.secrets()
     rn.mb.secrets = rn.secrets
-    open(rn.mb.p("cmd", "e.sh"), "w").write("env > $PILOT_OUT/env.txt\n")
+    open(rn.mb.p("cmd", "e.sh"), "w").write("env > $MEET_OUT/env.txt\n")
     rn.run_job("e")
     env = open(os.path.join(rn.mb.path + ".live", "e", "env.txt")).read()
     for leak in ("GH_TOKEN=", "GITHUB_TOKEN=", "GIT_CONFIG_", "ghp_secret_value_123", "ghp_other"):
@@ -53,11 +53,11 @@ def test_secrets_are_masked_in_pushed_files(rn, monkeypatch, world):
     rn.secrets = R.secrets()
     rn.mb.secrets = rn.secrets
     open(rn.mb.p("cmd", "f.sh"), "w").write(
-        "echo key=$MY_API_KEY > $PILOT_OUT/results.csv\n"
-        "mkdir -p $PILOT_OUT/sub && printf 'x\\0abcdefgh123456' > $PILOT_OUT/sub/blob.bin\n")
+        "echo key=$MY_API_KEY > $MEET_OUT/results.csv\n"
+        "mkdir -p $MEET_OUT/sub && printf 'x\\0abcdefgh123456' > $MEET_OUT/sub/blob.bin\n")
     rn.run_job("f")
-    assert git(world.gh, "show", "pilot:out/f/results.csv") == "key=***"
-    blob = subprocess.run(["git", "-C", str(world.gh), "show", "pilot:out/f/sub/blob.bin"],
+    assert git(world.gh, "show", "meetproxy:out/f/results.csv") == "key=***"
+    blob = subprocess.run(["git", "-C", str(world.gh), "show", "meetproxy:out/f/sub/blob.bin"],
                           capture_output=True).stdout
     assert b"abcdefgh123456" not in blob and b"***" in blob
 
@@ -85,7 +85,7 @@ def test_start_cleans_a_token_url_left_by_an_old_version(world, no_gpu, monkeypa
 # ---------- exact commit ----------
 
 def test_failed_checkout_refuses_the_job(rn):
-    open(rn.mb.p("cmd", "b.sh"), "w").write("# branch: does-not-exist\necho RAN > $PILOT_OUT/r\n")
+    open(rn.mb.p("cmd", "b.sh"), "w").write("# branch: does-not-exist\necho RAN > $MEET_OUT/r\n")
     rn.run_job("b")
     d = json.load(open(rn.mb.p("out", "b.done")))
     assert d["exit"] == -3 and d["error"].startswith("checkout failed")
@@ -120,4 +120,4 @@ def test_failed_push_is_retried_not_reported_as_done(world, monkeypatch):
     assert mb.push("again") is False                  # nothing new staged: still not pushed
     git(path, "remote", "set-url", "origin", good)
     assert mb.push("now") is True                     # the old commit goes out
-    assert git(world.gh, "show", "pilot:out/a.done") == "{}"
+    assert git(world.gh, "show", "meetproxy:out/a.done") == "{}"

@@ -1,5 +1,5 @@
 """Shared fixtures: an isolated git world (a bare repo plays GitHub), a fake GPU, a runner process,
-and a `pilot` helper that runs the real CLI as the agent would."""
+and a `meet` helper that runs the real CLI as the agent would."""
 import json, os, shutil, signal, stat, subprocess, sys, time
 from datetime import datetime, timedelta, timezone
 
@@ -18,12 +18,12 @@ def git_isolation(monkeypatch, tmp_path):
     for k, v in (("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"),
                  ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")):
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("PILOT_DIR", raising=False)
-    monkeypatch.delenv("PILOT_CHARTS", raising=False)
+    monkeypatch.delenv("MEET_DIR", raising=False)
+    monkeypatch.delenv("MEET_CHARTS", raising=False)
     monkeypatch.setenv("PYTHONPATH", ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
     for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GH_TOKEN"):
         monkeypatch.delenv(k, raising=False)            # git auth set by use_token() in a test
-    from pilot import runner
+    from meetproxy import runner
     monkeypatch.setattr(runner, "EXTRA_SECRETS", [])
 
 
@@ -80,15 +80,15 @@ class World:
         git(self.agent, "push", "-q", "origin", "main")
 
     # --- the agent side: the real CLI, as a subprocess in the project dir ---
-    def pilot(self, *args, stdin=None, check=False, timeout=120):
-        r = subprocess.run([sys.executable, "-m", "pilot.cli", *args], cwd=self.agent,
+    def meet(self, *args, stdin=None, check=False, timeout=120):
+        r = subprocess.run([sys.executable, "-m", "meetproxy.cli", *args], cwd=self.agent,
                            input=stdin, capture_output=True, text=True, timeout=timeout)
         if check and r.returncode:
-            raise AssertionError(f"pilot {args} -> {r.returncode}\n{r.stdout}\n{r.stderr}")
+            raise AssertionError(f"meet {args} -> {r.returncode}\n{r.stdout}\n{r.stderr}")
         return r
 
     def run_job(self, name, script, timeout=90):
-        return self.pilot("run", name, "-", "--poll", "0.5", "--timeout", str(timeout),
+        return self.meet("run", name, "-", "--poll", "0.5", "--timeout", str(timeout),
                           stdin=script, timeout=timeout + 30)
 
     def commit_push(self, msg, **files):
@@ -99,11 +99,11 @@ class World:
         git(self.agent, "push", "-q", "origin", "HEAD")
 
     def out(self, *p):
-        return self.agent / ".pilot" / "out" / os.path.join(*p)
+        return self.agent / ".meetproxy" / "out" / os.path.join(*p)
 
     def sync(self):
-        """Pull the agent's mailbox clone, as any pilot command would."""
-        git(self.agent / ".pilot", "pull", "-q", "--rebase", check=False)
+        """Pull the agent's mailbox clone, as any meet command would."""
+        git(self.agent / ".meetproxy", "pull", "-q", "--rebase", check=False)
 
     def done(self, job):
         if not self.out(job + ".done").exists():
@@ -119,7 +119,7 @@ class World:
         e.update(HOME=str(home), XDG_CONFIG_HOME=str(home), POLL_S="0.5", PUSH_S="1",
                  HEARTBEAT_S="2", IDLE_MIN="5", GPU_SAMPLE_S="0.2")
         e.update({k: str(v) for k, v in env.items()})
-        code = (f"import pilot.runner as r; r.start({str(self.gh)!r}, "
+        code = (f"import meetproxy.runner as r; r.start({str(self.gh)!r}, "
                 f"{str(self.colab / 'proj')!r}, {str(self.colab / 'mb')!r})")
         self.runner = subprocess.Popen([sys.executable, "-c", code], env=e,
                                        stdout=open(self.runner_log, "a"), stderr=subprocess.STDOUT,
@@ -129,7 +129,7 @@ class World:
     def wait_runner_state(self, want, timeout=30):
         t0 = time.time()
         while time.time() - t0 < timeout:
-            st = self.pilot("status").stdout
+            st = self.meet("status").stdout
             if want in st:
                 return st
             time.sleep(0.5)
@@ -154,7 +154,7 @@ class World:
     def runner_writes(self, files, msg="fake runner"):
         mb = self.tmp / "fake_runner_mb"
         if not mb.exists():
-            subprocess.run(["git", "clone", "-q", "-b", "pilot", str(self.gh), str(mb)],
+            subprocess.run(["git", "clone", "-q", "-b", "meetproxy", str(self.gh), str(mb)],
                            check=True, capture_output=True)
         git(mb, "pull", "-q", "--rebase")
         for k, v in files.items():
@@ -180,5 +180,5 @@ def world(tmp_path):
 @pytest.fixture
 def opened(world):
     """A world with the mailbox already opened by the agent."""
-    world.pilot("init", check=True)
+    world.meet("init", check=True)
     return world

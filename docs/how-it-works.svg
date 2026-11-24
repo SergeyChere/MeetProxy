@@ -18,7 +18,7 @@
   <rect width="1200" height="780" rx="22" fill="url(#bg)"/>
 
   <!-- title -->
-  <text x="60" y="66" font-size="30" font-weight="700" fill="#1f1d1a">How colab-pilot works</text>
+  <text x="60" y="66" font-size="30" font-weight="700" fill="#1f1d1a">How MeetProxy works</text>
   <text x="60" y="96" font-size="16" fill="#6b665e">Your agent has no GPU, your notebook has one. A git branch carries jobs one way and results the other.</text>
 
   <!-- ============ AGENT ============ -->
@@ -34,9 +34,9 @@
     <rect x="76" y="262" width="248" height="34" rx="8" fill="#eef3fd"/>
     <text x="90" y="284" fill="#23407e">git push  <tspan fill="#6b665e">your code</tspan></text>
     <rect x="76" y="306" width="248" height="34" rx="8" fill="#eef3fd"/>
-    <text x="90" y="328" fill="#23407e">pilot send <tspan fill="#6b665e">job.sh</tspan></text>
+    <text x="90" y="328" fill="#23407e">meet send <tspan fill="#6b665e">job.sh</tspan></text>
     <rect x="76" y="350" width="248" height="34" rx="8" fill="#eef3fd"/>
-    <text x="90" y="372" fill="#23407e">pilot wait <tspan fill="#6b665e">--follow</tspan></text>
+    <text x="90" y="372" fill="#23407e">meet wait <tspan fill="#6b665e">--follow</tspan></text>
   </g>
   <text x="76" y="420" font-size="14" font-weight="600" fill="#1f1d1a">Reads back</text>
   <text x="76" y="444" font-size="14" fill="#4a463f">• the live log, every ~45 s</text>
@@ -50,7 +50,7 @@
   </g>
   <rect x="450" y="140" width="300" height="8" rx="4" fill="#7a5af0"/>
   <text x="476" y="186" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7a5af0">GITHUB · YOUR REPO</text>
-  <text x="476" y="214" font-size="21" font-weight="700" fill="#1f1d1a">branch <tspan font-family="'JetBrains Mono', Menlo, Consolas, monospace">pilot</tspan></text>
+  <text x="476" y="214" font-size="21" font-weight="700" fill="#1f1d1a">branch <tspan font-family="'JetBrains Mono', Menlo, Consolas, monospace">meetproxy</tspan></text>
   <text x="476" y="238" font-size="14" fill="#6b665e">the mailbox, versioned and reviewable</text>
 
   <!-- cmd folder -->

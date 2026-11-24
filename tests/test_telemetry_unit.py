@@ -3,7 +3,7 @@ import os, time
 
 import pytest
 
-from pilot import telemetry as T
+from meetproxy import telemetry as T
 
 
 @pytest.mark.parametrize("raw,want", [

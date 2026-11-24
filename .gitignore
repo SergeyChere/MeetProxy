@@ -1,4 +1,4 @@
-.pilot/
+.meetproxy/
 __pycache__/
 *.pyc
 build/
@@ -7,4 +7,4 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
-pilot-runs/
+meet-runs/

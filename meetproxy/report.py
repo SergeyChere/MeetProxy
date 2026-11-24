@@ -1,8 +1,8 @@
 """Human-readable reports: report.md + SVG charts for one job, history.md for all of them.
 
-For people, not for the agent: made on request only (`# charts: on` in a job, `pilot report`),
+For people, not for the agent: made on request only (`# charts: on` in a job, `meet report`),
 rendered with matplotlib on the GPU side, so they cost the agent no tokens. GitHub renders the
-markdown and the SVGs in place (branch `pilot`, folder out/), on a phone too.
+markdown and the SVGs in place (branch `meetproxy`, folder out/), on a phone too.
 """
 import csv, io, json, os
 from datetime import datetime
@@ -285,7 +285,7 @@ def job_report(job_dir, done, log_text=None):
     if log_text:
         tail = [l for l in log_text.splitlines() if l.strip()][-25:]
         lines += ["## Log (last lines)", "", "```", *tail, "```", ""]
-    lines += ["---", "*Report for humans, made by colab-pilot. Agents: read `.done` and "
+    lines += ["---", "*Report for humans, made by MeetProxy. Agents: read `.done` and "
               "`history.csv` instead; this file is not for you.*", ""]
     with open(os.path.join(job_dir, "report.md"), "w") as f:
         f.write("\n".join(lines))
@@ -310,7 +310,7 @@ def history_report(rows, out_dir):
                       r.get("flags") or ""])
     lines += [_md_table(["job", "finished", "GPU", "commit", "s", "result", "util", "GPU flags"],
                         table), ""]
-    lines += ["---", "*For humans. Agents: `pilot history`.*", ""]
+    lines += ["---", "*For humans. Agents: `meet history`.*", ""]
     with open(os.path.join(out_dir, "history.md"), "w") as f:
         f.write("\n".join(lines))
     return os.path.join(out_dir, "history.md")

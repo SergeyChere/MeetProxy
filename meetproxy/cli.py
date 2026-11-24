@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""colab-pilot client: run jobs on a Colab GPU through the `pilot` branch of your repo.
+"""MeetProxy client: run jobs on a Colab GPU through the `meetproxy` branch of your repo.
 
-    pilot init                    open the mailbox (.pilot/) in the current git repo
-    pilot run <job> <script|->    send and follow the log until it finishes
-    pilot send <job> <script|->   pilot wait <job> [--follow]   pilot logs <job> [--tail N]
-    pilot status                  pilot stop                    pilot guide
-    pilot history [--last N]      one line per finished job (compare runs without reading logs)
-    pilot export [job…|--all]     copy results into pilot-runs/ of your project (not committed)
-    pilot report <job|history>    human report with charts in pilot-runs/ (needs matplotlib)
+    meet init                    open the mailbox (.meetproxy/) in the current git repo
+    meet run <job> <script|->    send and follow the log until it finishes
+    meet send <job> <script|->   meet wait <job> [--follow]   meet logs <job> [--tail N]
+    meet status                  meet stop                    meet guide
+    meet history [--last N]      one line per finished job (compare runs without reading logs)
+    meet export [job…|--all]     copy results into meet-runs/ of your project (not committed)
+    meet report <job|history>    human report with charts in meet-runs/ (needs matplotlib)
 """
 import argparse, json, os, random, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 
-BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
+BRANCH = os.environ.get("MEET_BRANCH", "meetproxy")
 
 
 def sh(*args, cwd=None, check=True):
@@ -28,10 +28,10 @@ def toplevel():
 
 
 def mailbox_dir():
-    if os.environ.get("PILOT_DIR"):
-        return os.environ["PILOT_DIR"]
+    if os.environ.get("MEET_DIR"):
+        return os.environ["MEET_DIR"]
     top = toplevel() or os.getcwd()
-    return os.path.join(top, ".pilot")
+    return os.path.join(top, ".meetproxy")
 
 
 DIR = None
@@ -43,7 +43,7 @@ def git(*args, check=True):
 
 def need_mailbox():
     if not os.path.isdir(os.path.join(DIR, ".git")):
-        sys.exit("no mailbox here: run `pilot init` in your project repo first")
+        sys.exit("no mailbox here: run `meet init` in your project repo first")
 
 
 def pull():
@@ -55,7 +55,7 @@ def push(msg):
     git("commit", "-q", "-m", msg)
     # the runner pushes logs every PUSH_S while a job runs, so a push can lose the race a few
     # times in a row; back off with jitter instead of giving up after a fixed short burst
-    for i in range(max(1, int(os.environ.get("PILOT_PUSH_TRIES", 12)))):
+    for i in range(max(1, int(os.environ.get("MEET_PUSH_TRIES", 12)))):
         r = git("push", "-q", check=False)
         if r.returncode == 0:
             return
@@ -78,18 +78,18 @@ def read(p):
 def cmd_init(a):
     top = toplevel()
     if not top:
-        sys.exit("run `pilot init` inside your project's git repository")
+        sys.exit("run `meet init` inside your project's git repository")
     if os.path.isdir(os.path.join(DIR, ".git")):
         print(f"mailbox already open at {DIR}")
         return cmd_status(a)
     url = sh("git", "-C", top, "remote", "get-url", "origin").stdout.strip()
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from pilot.runner import open_mailbox
+    from meetproxy.runner import open_mailbox
     open_mailbox(url, DIR)
     excl = os.path.join(top, ".git", "info", "exclude")
-    if os.path.isfile(excl) and ".pilot/" not in open(excl).read():
+    if os.path.isfile(excl) and ".meetproxy/" not in open(excl).read():
         with open(excl, "a") as f:
-            f.write("\n.pilot/\n")
+            f.write("\n.meetproxy/\n")
     print(f"mailbox: branch '{BRANCH}' of {url.split('@')[-1]} at {DIR}")
     print("Next: the human opens the Colab notebook and runs it with this repo name.")
 
@@ -151,7 +151,7 @@ def cmd_wait(a):
                 short["gpu_check"] = gpu_line(d["gpu_stats"])
             print(json.dumps(short), file=sys.stderr)
             sys.exit(d["exit"] if 0 <= d["exit"] < 256 else 1)
-        if not warned and not log and time.time() - t0 > float(os.environ.get("PILOT_SILENT_S", 120)):
+        if not warned and not log and time.time() - t0 > float(os.environ.get("MEET_SILENT_S", 120)):
             msg = runner_problem()
             if msg:
                 print(msg, file=sys.stderr)
@@ -163,13 +163,13 @@ def cmd_wait(a):
 
 def _pkg():
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    import pilot
-    return pilot
+    import meetproxy
+    return meetproxy
 
 
 def gpu_line(stats):
     _pkg()
-    from pilot.telemetry import line
+    from meetproxy.telemetry import line
     return line(stats)
 
 
@@ -177,14 +177,14 @@ def cmd_history(a):
     need_mailbox()
     pull()
     _pkg()
-    from pilot import history
+    from meetproxy import history
     print(history.table(history.read(path("out", "history.csv")), last=a.last))
 
 
 def export_dir(a):
     if a.dir:
         return a.dir
-    return os.path.join(toplevel() or os.getcwd(), "pilot-runs")
+    return os.path.join(toplevel() or os.getcwd(), "meet-runs")
 
 
 def export_jobs(jobs, dest):
@@ -230,7 +230,7 @@ def cmd_report(a):
     need_mailbox()
     pull()
     _pkg()
-    from pilot import history, report
+    from meetproxy import history, report
     dest = export_dir(a)
     try:
         if a.target == "history":
@@ -321,7 +321,7 @@ def cmd_guide(a):
 def main():
     global DIR
     DIR = mailbox_dir()
-    p = argparse.ArgumentParser(prog="pilot", description=__doc__,
+    p = argparse.ArgumentParser(prog="meet", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     s = p.add_subparsers(dest="c", required=True)
     s.add_parser("init").set_defaults(f=cmd_init)

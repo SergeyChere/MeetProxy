@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "colab-pilot"
-version = "0.5.0"
-description = "Let an AI agent run GPU experiments in Google Colab through a git mailbox"
+name = "meetproxy"
+version = "0.6.0"
+description = "Let an AI agent run GPU experiments on your GPU (Google Colab today) through a git mailbox"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Sergii Cherepanov"}]
@@ -15,14 +15,14 @@ requires-python = ">=3.8"
 charts = ["matplotlib"]  # human reports; preinstalled on Colab
 
 [project.scripts]
-pilot = "pilot.cli:main"
-colab-pilot-runner = "pilot.runner:main"
+meet = "meetproxy.cli:main"
+meetproxy-runner = "meetproxy.runner:main"
 
 [tool.setuptools]
-packages = ["pilot"]
+packages = ["meetproxy"]
 
 [tool.setuptools.package-data]
-pilot = ["guide.md"]
+meetproxy = ["guide.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

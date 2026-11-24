@@ -1,5 +1,5 @@
 [run]
-source = pilot
+source = meetproxy
 parallel = true
 sigterm = true
 data_file = .coverage

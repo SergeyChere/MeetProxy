@@ -1,23 +1,23 @@
-"""colab-pilot runner: executes jobs from a git mailbox branch inside a notebook.
+"""MeetProxy runner: executes jobs from a git mailbox branch inside a notebook.
 
 In Colab (one cell):
-    !pip -q install git+https://github.com/SergeyChere/colab-pilot
-    import pilot.runner; pilot.runner.colab_start("you/your-project")
+    !pip -q install git+https://github.com/SergeyChere/MeetProxy
+    import meetproxy.runner; meetproxy.runner.colab_start("you/your-project")
 
-The mailbox is the branch `pilot` of your own project repository; it is created if missing.
+The mailbox is the branch `meetproxy` of your own project repository; it is created if missing.
 Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12 GPU_SAMPLE_S=1
-PILOT_CHARTS=1 makes a human report for every job (otherwise only for `# charts: on`).
+MEET_CHARTS=1 makes a human report for every job (otherwise only for `# charts: on`).
 """
 import base64, json, os, re, shutil, signal, subprocess, threading, time
 
 try:
-    from pilot import history, report, telemetry
+    from meetproxy import history, report, telemetry
 except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.5.0"
-BRANCH = os.environ.get("PILOT_BRANCH", "pilot")
+VERSION = "0.6.0"
+BRANCH = os.environ.get("MEET_BRANCH", "meetproxy")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
 
@@ -95,14 +95,14 @@ def git(path, *args, check=True):
     return r
 
 
-IDENT = ["-c", "user.name=colab-pilot", "-c", "user.email=colab-pilot@localhost"]
+IDENT = ["-c", "user.name=MeetProxy", "-c", "user.email=meetproxy@localhost"]
 
 
 def set_identity(path):
     """Colab has no git identity; without one, `pull --rebase` (needed whenever the agent pushed a
     command meanwhile) and autostash fail, and every later push is rejected."""
-    git(path, "config", "user.name", "colab-pilot")
-    git(path, "config", "user.email", "colab-pilot@localhost")
+    git(path, "config", "user.name", "MeetProxy")
+    git(path, "config", "user.email", "meetproxy@localhost")
 
 
 def open_mailbox(url, path, branch=BRANCH):
@@ -127,7 +127,7 @@ def open_mailbox(url, path, branch=BRANCH):
             open(os.path.join(path, d, ".keep"), "w").close()
         set_identity(path)
         git(path, "add", "-A")
-        git(path, *IDENT, "commit", "-q", "-m", "colab-pilot mailbox")
+        git(path, *IDENT, "commit", "-q", "-m", "MeetProxy mailbox")
         if git(path, "push", "-q", "-u", "origin", branch, check=False).returncode == 0:
             return path
         shutil.rmtree(path, ignore_errors=True)  # someone else created it meanwhile: clone again
@@ -202,8 +202,8 @@ class Mailbox:
 
 class Runner:
     def __init__(self, mailbox=None, workdir=None):
-        self.mb = Mailbox(mailbox or os.environ["PILOT_MAILBOX"])
-        wd = workdir or os.environ.get("PILOT_WORKDIR") or os.getcwd()
+        self.mb = Mailbox(mailbox or os.environ["MEET_MAILBOX"])
+        wd = workdir or os.environ.get("MEET_WORKDIR") or os.getcwd()
         self.workdir = wd if os.path.isdir(wd) else os.getcwd()
         env = lambda k, d: float(os.environ.get(k, d))
         self.poll, self.push_s = env("POLL_S", 20), env("PUSH_S", 45)
@@ -310,18 +310,18 @@ class Runner:
         if resumed and not os.path.exists(logpath):
             shutil.copyfile(self.mb.p("out", name + ".log"), logpath)
         self.mb.live = {name: outdir, name + ".log": logpath}
-        env = job_env(COLAB_PILOT="1", PILOT_OUT=outdir, PILOT_JOB=name)
+        env = job_env(MEETPROXY="1", MEET_OUT=outdir, MEET_JOB=name)
         t0 = time.time()
         self.state, self.job = "running", name
         self.heartbeat()
         self.mb.push(f"{name}: start")
         charts = (header(script, "charts") or "").lower() in ("on", "yes", "1") or \
-            os.environ.get("PILOT_CHARTS") == "1"
+            os.environ.get("MEET_CHARTS") == "1"
         sampler = None
         if not no_gpu and (header(script, "telemetry") or "on").lower() != "off":
             sampler = telemetry.Sampler(os.path.join(outdir, "gpu.csv")).start()
         with open(logpath, "a") as log:
-            log.write(f"# colab-pilot: {name} on {self.gpu}; {done['code']}"
+            log.write(f"# MeetProxy: {name} on {self.gpu}; {done['code']}"
                       f"{' (resumed)' if resumed else ''}\n")
             proc = subprocess.Popen(["bash", "-c", script], cwd=self.workdir, env=env,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -388,7 +388,7 @@ class Runner:
                 self.mb.live = {}
 
     def loop(self):
-        print(f"colab-pilot {VERSION}: gpu={self.gpu}\n  mailbox={self.mb.path}\n"
+        print(f"MeetProxy {VERSION}: gpu={self.gpu}\n  mailbox={self.mb.path}\n"
               f"  workdir={self.workdir}\nWaiting for jobs. Stop with the stop button; "
               f"the runtime stays on until you shut it down.", flush=True)
         t_start = last_job = self.t_start
@@ -424,7 +424,7 @@ class Runner:
             self.job = None
             self.heartbeat()
             self.mb.push(f"runner exit: {self.state}")
-            print(f"colab-pilot exit: {self.state}. The runtime is still on; "
+            print(f"MeetProxy exit: {self.state}. The runtime is still on; "
                   f"shut it down yourself when done.", flush=True)
 
 
@@ -467,7 +467,7 @@ def colab_start(repo, secret="GH_TOKEN", root="/content"):
     """One-call start in Colab. `repo` is "owner/name"; the token comes from Colab secrets.
     Problems are printed as one plain message (no traceback) and the call returns."""
     def stop(msg):
-        print("\ncolab-pilot: " + msg + "\n", flush=True)
+        print("\nMeetProxy: " + msg + "\n", flush=True)
 
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo or "") or repo == "owner/repo":
         return stop("put your project's repository into REPO as owner/name "
@@ -499,7 +499,7 @@ def colab_start(repo, secret="GH_TOKEN", root="/content"):
     url = f"https://github.com/{repo}.git"
     name = repo.rstrip("/").split("/")[-1]
     try:
-        start(url, os.path.join(root, name), os.path.join(root, ".pilot-mailbox"))
+        start(url, os.path.join(root, name), os.path.join(root, ".meetproxy-mailbox"))
     except RuntimeError as e:
         msg = str(e)
         hint = (f" Check that the token has access to {repo} with Contents: Read and write, "

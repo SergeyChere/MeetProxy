@@ -1,11 +1,11 @@
 ---
-name: colab-pilot
+name: meetproxy
 description: Run GPU experiments (CUDA kernels, PyTorch training, benchmarks) on the user's Google Colab GPU from a coding agent, through a git branch used as a mailbox. Use when the user wants code run "on my Colab", "on the GPU", or asks to benchmark or test something that needs a GPU the agent does not have.
 ---
 
-# colab-pilot
+# MeetProxy
 
-You have no GPU, the user has a Colab runtime. You exchange work through the branch `pilot` of the
+You have no GPU, the user has a Colab runtime. You exchange work through the branch `meetproxy` of the
 user's project repository: you push jobs (bash scripts) to `cmd/`, a loop in the Colab notebook runs
 them and pushes logs and results to `out/`. No ports, tunnels or shells are opened.
 
@@ -17,31 +17,31 @@ From the root of the user's project repository (it must have a GitHub `origin` y
 bash <skill-dir>/scripts/setup.sh
 ```
 
-It installs the `pilot` command (`pip install git+https://github.com/SergeyChere/colab-pilot`),
-opens the mailbox in `.pilot/` (git-excluded) and prints the runner status.
+It installs the `meet` command (`pip install git+https://github.com/SergeyChere/MeetProxy`),
+opens the mailbox in `.meetproxy/` (git-excluded) and prints the runner status.
 
 If it says **no runner is connected**, tell the user this, filling in `<owner/repo>`, then keep
 working on the experiment while you wait:
 
-> Open https://colab.research.google.com/github/SergeyChere/colab-pilot/blob/main/colab_runner.ipynb,
+> Open https://colab.research.google.com/github/SergeyChere/MeetProxy/blob/main/colab_runner.ipynb,
 > choose *Runtime → Change runtime type → GPU*, type `<owner/repo>` in the REPO field, *Run all*.
 > First time only: in Colab's key icon add a secret `GH_TOKEN` — a GitHub fine-grained token for
 > this one repository with *Contents: Read and write*.
 
-Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
+Check again with `meet status` until it shows `runner: idle | gpu: <name>`.
 
 ## 2. Run an experiment
 
 1. **Commit and push** the code. The GPU runs the latest *pushed* commit of your current branch;
-   uncommitted or unpushed changes never reach it (`pilot send` warns about them).
+   uncommitted or unpushed changes never reach it (`meet send` warns about them).
 2. Write a job script. Start from `templates/job.sh` in this skill: it has the header lines and the
    results CSV already set up.
 3. Run it:
-   - short job: `pilot run s01_bench job.sh` — sends, streams the log, exits with the job's exit code;
-   - long job: `pilot send s01_bench job.sh`, keep working, later `pilot wait s01_bench` (without
-     `--follow`: it would stream the whole log into your context), then `pilot logs s01_bench --tail 50`.
-4. Read the result: the log, `.pilot/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
-   and `.pilot/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
+   - short job: `meet run s01_bench job.sh` — sends, streams the log, exits with the job's exit code;
+   - long job: `meet send s01_bench job.sh`, keep working, later `meet wait s01_bench` (without
+     `--follow`: it would stream the whole log into your context), then `meet logs s01_bench --tail 50`.
+4. Read the result: the log, `.meetproxy/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
+   and `.meetproxy/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
    fetched or checked out (unpushed branch, typo in `# branch:`) — fix that, resend under a new name.
 5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
    runner samples the GPU during every job and reports only what was off:
@@ -50,21 +50,21 @@ Check again with `pilot status` until it shows `runner: idle | gpu: <name>`.
    - `thermal throttle`, `hw slowdown`, `SM clock unstable` — timings are distorted, do not compare;
    - `mem peak N%` — close to out-of-memory;
    - `other GPU procs` / `GPU busy at start` — the GPU was shared.
-   Full numbers are in `gpu_stats` in `.done`, every sample in `.pilot/out/<job>/gpu.csv`.
+   Full numbers are in `gpu_stats` in `.done`, every sample in `.meetproxy/out/<job>/gpu.csv`.
    `# telemetry: off` in a job disables it.
-6. **Compare runs** with `pilot history` — one line per finished job (GPU, commit, seconds, exit,
+6. **Compare runs** with `meet history` — one line per finished job (GPU, commit, seconds, exit,
    util, flags) — instead of reopening old logs.
 
-Other commands: `pilot logs <job> --tail 50`, `pilot status`, `pilot stop` (ends the runner).
+Other commands: `meet logs <job> --tail 50`, `meet status`, `meet stop` (ends the runner).
 
 ## For the human, not for you
 
 - When the user asks for charts or a report: add `# charts: on` to the job, or run
-  `pilot report <job>` / `pilot report history`, and give them the printed path. On GitHub the
-  reports are in branch `pilot`, folder `out/`, and render with their charts.
+  `meet report <job>` / `meet report history`, and give them the printed path. On GitHub the
+  reports are in branch `meetproxy`, folder `out/`, and render with their charts.
 - **Never open, read or summarize** `report.md`, `history.md` or `charts/*.svg`: they are drawn
   for people, cost you tokens, and hold nothing that `.done` and `history.csv` do not.
-- `pilot export [job…|--all]` copies results into `pilot-runs/` of the project; it commits
+- `meet export [job…|--all]` copies results into `meet-runs/` of the project; it commits
   nothing. Commit only if the user asks.
 
 ## 3. Job script rules
@@ -72,7 +72,7 @@ Other commands: `pilot logs <job> --tail 50`, `pilot status`, `pilot stop` (ends
 - Header lines: `# timeout: <seconds>` (always), `# gpu: any` (or `T4`, `L4`, `A100` when numbers
   matter — the job is refused on another GPU).
 - Self-contained bash, run from the project root: install and build what it needs.
-- Append one CSV line per measurement to `$PILOT_OUT/results.csv`; it is pushed during the run, so
+- Append one CSV line per measurement to `$MEET_OUT/results.csv`; it is pushed during the run, so
   a job that dies halfway still leaves data.
 - Job names are unique and sortable (`s01_build`, `s02_bench`). A name runs only once.
 - When the user is away, send one longer script that runs every planned variant instead of many
@@ -88,8 +88,8 @@ Other commands: `pilot logs <job> --tail 50`, `pilot status`, `pilot stop` (ends
 ## 5. Never
 
 Print secrets, open network services or tunnels, try to stop or delete the Colab runtime, or merge
-the `pilot` branch into anything. Tell the user in one line whenever they must act (reconnect, pick
-a GPU, add the secret). If `pilot status` says the runner went silent, the runtime was probably
+the `meetproxy` branch into anything. Tell the user in one line whenever they must act (reconnect, pick
+a GPU, add the secret). If `meet status` says the runner went silent, the runtime was probably
 disconnected: ask them to reconnect and run the notebook again.
 
 See `reference/troubleshooting.md` when something does not work.
@@ -97,6 +97,6 @@ See `reference/troubleshooting.md` when something does not work.
 ## What this skill does on the network
 
 Installs a Python package from GitHub, and runs `git fetch/pull/push` against the user's own
-repository (branch `pilot`). Nothing else. Jobs never receive the GitHub token; secrets are masked
+repository (branch `meetproxy`). Nothing else. Jobs never receive the GitHub token; secrets are masked
 in logs and result files before they are pushed. The Colab side executes whatever is pushed to
 `cmd/`, so only trusted people should have write access to the repository.

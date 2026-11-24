@@ -1,6 +1,6 @@
-"""Run history: one CSV line per finished job in out/history.csv, kept forever on branch `pilot`.
+"""Run history: one CSV line per finished job in out/history.csv, kept forever on branch `meetproxy`.
 
-Written by the runner only. Read by `pilot history` (compact table for the agent) and by
+Written by the runner only. Read by `meet history` (compact table for the agent) and by
 report.history_report (charts for the human)."""
 import csv, io, os, re
 

@@ -5,7 +5,7 @@ import json, os, subprocess, sys, threading, time, types
 import pytest
 
 from conftest import git
-from pilot import runner as R
+from meetproxy import runner as R
 
 
 # ---------- small helpers ----------
@@ -49,11 +49,11 @@ def test_git_error_is_redacted(tmp_path, monkeypatch):
 
 def test_open_mailbox_creates_then_clones(world):
     a = R.open_mailbox(str(world.gh), str(world.tmp / "mb1"))
-    assert git(world.gh, "rev-parse", "--verify", "pilot")
+    assert git(world.gh, "rev-parse", "--verify", "meetproxy")
     assert os.path.isfile(os.path.join(a, "cmd", ".keep"))
     b = R.open_mailbox(str(world.gh), str(world.tmp / "mb2"))       # branch exists: plain clone
-    assert git(b, "log", "-1", "--format=%s") == "colab-pilot mailbox"
-    assert git(b, "config", "user.name") == "colab-pilot"
+    assert git(b, "log", "-1", "--format=%s") == "MeetProxy mailbox"
+    assert git(b, "config", "user.name") == "MeetProxy"
 
 
 def test_open_mailbox_bad_url(tmp_path):
@@ -72,7 +72,7 @@ def test_mailbox_push_nothing_to_commit_and_live_files(world):
     mb.live = {"j": str(live / "j"), "j.log": str(live / "j.log"), "gone.log": str(live / "x")}
     assert mb.push("live") is True
     assert (world.tmp / "mb" / "out" / "j" / "r.csv").read_text() == "1\n"
-    assert git(world.gh, "show", "pilot:out/j.log") == "hello"
+    assert git(world.gh, "show", "meetproxy:out/j.log") == "hello"
 
 
 def test_mailbox_push_gives_up_with_a_warning(world, capsys, monkeypatch):
@@ -179,7 +179,7 @@ def test_run_job_basics_without_gpu(rn, monkeypatch):
     monkeypatch.setenv("SOME_PASSWORD", "hunter2hunter2")
     rn.secrets = R.secrets()
     open(rn.mb.p("cmd", "j.sh"), "w").write(
-        "echo pw=$SOME_PASSWORD\necho $COLAB_PILOT $PILOT_JOB\necho 7 > $PILOT_OUT/r.csv\nexit 4\n")
+        "echo pw=$SOME_PASSWORD\necho $MEETPROXY $MEET_JOB\necho 7 > $MEET_OUT/r.csv\nexit 4\n")
     rn.run_job("j")
     d = json.load(open(rn.mb.p("out", "j.done")))
     log = open(rn.mb.p("out", "j.log")).read()
@@ -225,8 +225,8 @@ def test_loop_keyboard_interrupt(rn, monkeypatch):
 
 
 def test_main_uses_env(rn, monkeypatch):
-    monkeypatch.setenv("PILOT_MAILBOX", rn.mb.path)
-    monkeypatch.setenv("PILOT_WORKDIR", rn.workdir)
+    monkeypatch.setenv("MEET_MAILBOX", rn.mb.path)
+    monkeypatch.setenv("MEET_WORKDIR", rn.workdir)
     monkeypatch.setenv("IDLE_MIN", "0.005")
     monkeypatch.setenv("POLL_S", "0.1")
     R.main()
@@ -294,7 +294,7 @@ def test_colab_start_reads_fallback_secret_and_starts(monkeypatch, capsys, no_gp
         monkeypatch.delenv(k, raising=False)
     R.colab_start("alice/kernels", root="/content")
     assert seen["url"] == "https://github.com/alice/kernels.git"
-    assert seen["wd"] == "/content/kernels" and seen["mb"] == "/content/.pilot-mailbox"
+    assert seen["wd"] == "/content/kernels" and seen["mb"] == "/content/.meetproxy-mailbox"
     assert "WARNING: no GPU" in capsys.readouterr().out
     assert "tok12345678" in R.EXTRA_SECRETS and "GH_TOKEN" not in os.environ
 
@@ -352,7 +352,7 @@ def test_telemetry_crash_does_not_lose_the_job(world, fake_gpu, monkeypatch):
 
 
 def test_seed_from_pushed_prefers_the_larger_copy(tmp_path):
-    from pilot.runner import seed_from_pushed
+    from meetproxy.runner import seed_from_pushed
     pushed, live = tmp_path / "pushed", tmp_path / "live"
     (pushed / "charts").mkdir(parents=True)
     (pushed / "results.csv").write_text("h\nline0\nline1\n")

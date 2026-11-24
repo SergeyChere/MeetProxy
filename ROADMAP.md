@@ -36,12 +36,13 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 | | Milestone | What it gave |
 |---|---|---|
 | ✅ | **M0 GPU telemetry** | `nvidia-smi` sampled every second: raw `gpu.csv`, `gpu_stats` in `.done`, one flags line for the agent |
-| ✅ | **M1 Standalone skill** | `skill/colab-pilot/` and `scripts/build_skill.sh` → upload zip |
+| ✅ | **M1 Standalone skill** | `skill/meetproxy/` and `scripts/build_skill.sh` → upload zip |
 | ✅ | **M2 Diagrams in markdown** | [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md), colored Mermaid |
-| ✅ | **M3 Run history** | `out/history.csv`, `pilot history` |
+| ✅ | **M3 Run history** | `out/history.csv`, `meet history` |
 | ✅ | **M4 Human reports** | `# charts: on` → `report.md` + SVG charts, drawn on the GPU side, no agent tokens |
-| ✅ | **M5 Export** | `pilot export` → `pilot-runs/`, nothing committed |
+| ✅ | **M5 Export** | `meet export` → `meet-runs/`, nothing committed |
 | ✅ | **M6 Hardening** | credentials isolation, exact-commit runs, reliable delivery, trust model |
+| ✅ | **Rename to MeetProxy** | command `meet`, package `meetproxy`, mailbox branch `meetproxy`: the name no longer ties the project to Colab |
 | ✅ | **Tests and CI** | unit, CLI and end-to-end suite, 99% coverage, CI on every push |
 
 ## Fix first
@@ -57,15 +58,15 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 
 - [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of crashing the runner.
 - [ ] Timeouts on every git command: a hung network cannot freeze the runner.
-- [ ] `pilot status` / `pilot wait` notice a stuck `running` (heartbeat older than ~3 min during a job).
+- [ ] `meet status` / `meet wait` notice a stuck `running` (heartbeat older than ~3 min during a job).
 - [ ] A job's timeout never exceeds what is left of `MAX_HOURS`.
 - [ ] Version tags; the notebook, skill and guide install a pinned version instead of `main`.
 - [ ] Resuming a job after a restart decides by a reliable marker, not by file size.
 
 ### ⬜ M8 — 0.6: job lifecycle
 
-- [ ] `pilot cancel <job>` — cancel one job without stopping the runner.
-- [ ] `pilot retry <job>` — rerun under a new name.
+- [ ] `meet cancel <job>` — cancel one job without stopping the runner.
+- [ ] `meet retry <job>` — rerun under a new name.
 - [ ] Job claiming: two runners can never run the same job.
 - [ ] Logs do not bloat git history (rotation or moving old logs out).
 
@@ -115,7 +116,7 @@ token, session lifetime. Result: a table and the order to support them.
 ### ⬜ M16 — 0.9: a runner for any Linux machine with an NVIDIA GPU
 
 Rented GPUs and your own server: the runner as a service, token from the environment, AMD
-(`rocm-smi`) if needed. Decide whether to rename the project (it is no longer Colab-only).
+(`rocm-smi`) if needed.
 
 ## Pro
 
@@ -139,7 +140,7 @@ throughput, IPC — what GPU utilization cannot show. Comparison reports across 
 
 ## Ideas, not scheduled
 
-- `pilot bench`: repeat a job N times, report median and spread.
+- `meet bench`: repeat a job N times, report median and spread.
 - Artifacts too large for git: optional upload to a GCS / Hugging Face bucket, link in `.done`.
 
 ---

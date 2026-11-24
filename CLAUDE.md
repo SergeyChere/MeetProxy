@@ -1,2 +1,2 @@
 @AGENTS.md
-@pilot/guide.md
+@meetproxy/guide.md
