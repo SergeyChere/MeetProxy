@@ -4,7 +4,7 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.6). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.7). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
@@ -17,7 +17,9 @@ consented adoption metrics); v2.5 follows PRODUCT rev. 3 (screen on many GPUs, d
 memory suggests instead of banning; oracle reuse; first beta on local GPU + Colab; outcome-based
 pilot metric with SkyPilot as a comparison arm); v2.6 follows PRODUCT rev. 4 (two pre-registered
 routes to GO, screening safeguards, single-GPU campaigns and a justified choice of parallelism,
-direct local execution as a pilot arm, a fresh-session memory test). The contract is agreed **before** production code
+direct local execution as a pilot arm, a fresh-session memory test); v2.7 changes the order of
+investment, not the requirements: a thin skill is tested first and stage-A components are built only
+for failures it cannot solve (§18). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
@@ -715,9 +717,17 @@ machine by default.
 
 ## 18. Stages and acceptance gates
 
+**Order of investment (skill-first).** Before any stage-A component is built, a thin installable
+skill — the workflow, small portable records, deterministic helpers for what must be enforced, native
+provider tools underneath, the mailbox only where needed — is compared with native tools alone
+(stage 0). Each stage-A component is then built **only for a recurring failure the thin skill could
+not solve**, and kept only if it measurably fixes it. A skill is not a security boundary: checks that
+must hold (spending, deadlines, credentials, source identity, verification) stay in executable code,
+however small.
+
 | Stage | Done when |
 |---|---|
-| **0. Design partners** (in parallel with everything below) | 5 people from the initial segment (PRODUCT §3) observed in their real workflow and trying a campaign with today's tool; interventions, objections and repeat use recorded (opt-in, §17). |
+| **0. Skill-first test with design partners** | 5 people from the initial segment (PRODUCT §3) observed in their real workflow; native tools (A) vs the thin skill (B), adding one component (C) only after a failure B cannot fix; cold install and a fresh-context second session; verified outcome, active human minutes, elapsed time, cost, failures and unassisted repeat use recorded (opt-in, §17). |
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
 | **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec with requirements block, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry, overhead measured (§9.1). |
 | **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. With A1 this gives the first beta's two profiles: local GPU + Colab. |

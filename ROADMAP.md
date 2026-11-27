@@ -9,16 +9,17 @@ providers; value is proven before the provider list grows.
 ```mermaid
 flowchart LR
     D["✅ Done<br/>M0–M7<br/>telemetry · skill · history<br/>reports · hardening · tests · safety fixes"]
-    DP["🤝 M8<br/>two-week falsification<br/>5 users · repeat use"]
+    DP["🤝 M8<br/>skill-first test<br/>native vs thin skill · 5 users"]
     S0["🧪 Stage 0 · M9<br/>spike: Colab CLI<br/>lifecycle facts"]
-    A["🧱 Stage A · M10<br/>durable contract<br/>local + Colab"]
+    A["🧱 Stage A · M10<br/>only components<br/>a failure asks for"]
     B["🔬 Stage B · M11<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
     C["🔌 Stage C · M12<br/>SSH + mailbox<br/>as adapter"]
     DD["📦 Stage D · M13<br/>packaging<br/>Claude Code · Codex"]
     E["🌍 Stage E · M14<br/>on demand<br/>providers · Colab API · MCP"]
     PRO["💎 Pro · M15–M16<br/>CUDA profiling"]
     V1["1.0 · M17"]
-    D --> DP -- "pain + repeat use" --> A --> B
+    D --> DP -- "GO component" --> A --> B
+    DP -. "GO skill: ship it,<br/>no platform" .-> DD
     D --> S0 --> A
     B --> C --> DD --> E --> PRO --> V1
     B -. "technical + adoption GO<br/>unlock new backends" .-> C
@@ -75,29 +76,44 @@ Small, safe fixes to what users run today, while stage A is designed.
 
 ## Stage 0 — demand and feasibility (in parallel)
 
-### 🔜 M8 — design partners: a two-week attempt to falsify the idea
+### 🔜 M8 — skill-first: a thin skill against native tools, with design partners
 
-Evidence before more building. Decision rules are written down **before** recruitment and are
-exploratory, not statistical. Nothing in stage A starts until this ends.
-*Design: §17, §18 · Requirements: PR-26, PR-20, PR-22.*
+Evidence before more building, and the smallest product tested on its own. Decision rules are
+written down **before** recruitment and are exploratory, not statistical. M10 starts only on a
+"GO component" below. *Design: §18, §17 · Requirements: PR-01, PR-26, PR-20, PR-22, PR-23.*
 
+**Arm B, the thin skill** — workflow in the skill, machinery only where it must be enforced:
+- [x] Install: exact version (`meet --version` checked), isolated venv, only with the user's
+      consent; never `--break-system-packages`.
+- [ ] Provider-neutral `SKILL.md` + quick start: local GPU first, Colab through the official Colab
+      CLI with an explicit command-line fallback (no assumption that one skill can call another);
+      the mailbox stays as an optional route where only it works.
+- [ ] Local path with **no GitHub and no notebook**: a small helper that runs a job under a hard
+      deadline, records `.done`, results, telemetry and history (reusing today's code).
+- [ ] Small versioned JSON/JSONL experiment records (campaign, variants, verdicts); no database.
+- [ ] Deterministic checks a prompt cannot replace: the oracle pinned (command + file hashes),
+      matched measurements recorded, verified-or-not decided by code, never by the model.
+- [ ] Missing capabilities reported explicitly per host; never a silent switch of destination.
+
+**The experiment** — same agent, task, GPU access, oracle and resource envelope in every arm:
 - [ ] **Find the pain.** Recruit 5 independent, frequent GPU experimenters (local NVIDIA GPU and/or
-      Colab; also note lab-server users who ask). Observe their last real experiment, including the
-      native tools they use. Pass: ≥ 3 have a recurring, meaningful pain and a real upcoming task.
-- [ ] **Offer the outcome, not the architecture.** A short demo or an assisted experiment. Pass: ≥ 3
-      volunteer a real task; every refusal and its reason is recorded.
-- [ ] **Smallest test, with today's runner** (assisted and labelled as such — nothing is built just
-      to collect feedback): an existing correctness check, one GPU, 3–5 variants, compared with the
-      user's real incumbent — including the agent with its normal tools, a small run script, the
-      existing tests and an experiment log, counting the time to create it. Record cold start
-      end to end, active human minutes, verified result, cost, failures. Include one expert with
-      mature scripts and one user without them.
-- [ ] **Repeat use.** Within two weeks, ≥ 2 independent users choose MeetProxy again for a real task
-      without prompting or setup help. Count everyone recruited; explain each non-activation.
-- [ ] **Decide:** GO only for the validated use case (safety adequate, users choose it again) ·
-      ITERATE on one observed blocker · STOP the broad build if the pain is rare, native tools
-      suffice or nobody repeats. If a project template or skill is enough, ship that instead of a
-      framework.
+      Colab; note lab-server users who ask). Observe their last real experiment and their native
+      tools. Pass: ≥ 3 have a recurring, meaningful pain and a real upcoming task.
+- [ ] **Offer the outcome, not the architecture.** Pass: ≥ 3 volunteer a real task; every refusal
+      and its reason recorded.
+- [ ] Arms: **A** native tools (official provider skill/CLI or direct local execution, project tests,
+      ordinary notes) · **B** thin MeetProxy skill · **C** B plus one specific component, only after a
+      failure B cannot reliably solve — the whole core is never built just to create this arm.
+- [ ] A real CUDA project with an existing correctness check, 3–5 variants; a cold install and a
+      second session with fresh context. Record verified outcome, active human minutes, elapsed
+      time, total cost where known, failures. One expert with mature scripts, one user without.
+- [ ] **Repeat use.** Within two weeks, ≥ 2 independent users choose it again for a real task without
+      prompting or setup help. Count everyone recruited; explain each non-activation.
+- [ ] **Decide:** **GO skill** — B beats A by the pre-agreed margin, no correctness or safety
+      regression, users return → ship B, stop the broad platform build · **GO component** — B fails
+      on a specific recurring problem and C measurably fixes it without unacceptable friction → build
+      only that component (M10) · **STOP or narrow** — A suffices, users do not return, or complexity
+      costs more than it saves; keep the mailbox as a specialised tool if it stays useful.
 - [ ] Opt-in records only; findings go into PRODUCT through the normal chain.
 
 ### ⬜ M9 — spike: Colab CLI lifecycle
@@ -115,6 +131,11 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 ## Stage A — minimal durable contract, local + Colab
 
 ### ⬜ M10 — the contract on the local GPU and on Colab, as thin slices
+
+**Conditional.** Each item below is built only on a *GO component* from M8 — for a recurring failure
+the thin skill could not solve — and kept only if it measurably fixes it. Items no failure asks for
+stay unbuilt. Provider execution, auth, transfer and session discovery are reused from official
+tools, not reimplemented.
 
 **A1 · local vertical slice** — *Design: §9, §9.1, §7, §4, §5, §13, §14 · PR-04, PR-06, PR-09, PR-10, PR-07, PR-14, PR-15, PR-27, PR-28*
 - [ ] **Quick Run** first: script + profile, nothing more; Simple and Standard telemetry levels.
@@ -217,7 +238,9 @@ also show reliable cancellation and recovery and correct results.
 
 ## Stage D — packaging and release
 
-### ⬜ M13 — the skill, where it is tested
+### ⬜ M13 — the skill on more hosts
+
+The first installable skill and real feedback already come from M8; this adds hosts.
 
 *Design: §15, §16 · Requirements: PR-01, PR-17, PR-18, PR-16.*
 
@@ -225,7 +248,7 @@ also show reliable cancellation and recovery and correct results.
       (`.agents/skills`, `agents/openai.yaml`).
 - [ ] Pinned releases with checksums; bootstrap installs only with permission.
 - [ ] Support matrix with a smoke test per listed host; untested hosts marked as such.
-- [ ] Quick start; publish the free skill; collect real feedback.
+- [ ] Publish the free skill on marketplaces once M8 decides GO skill or GO component.
 
 ## Stage E — on demand
 

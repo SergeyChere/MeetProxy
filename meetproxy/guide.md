@@ -9,8 +9,11 @@ change a job already sent. The commit must be on GitHub — `meet send` warns if
 ## Start (once per session)
 
 ```bash
-pip install -q git+https://github.com/SergeyChere/MeetProxy@v0.7.0 || \
-  pip install -q --break-system-packages git+https://github.com/SergeyChere/MeetProxy@v0.7.0
+# exactly this version, in its own venv; ask the human before installing anything
+V=0.7.0; E=~/.meetproxy/venv-$V
+[ "$(meet --version 2>/dev/null)" = "meet $V" ] || [ -x $E/bin/meet ] || {
+  python3 -m venv $E && $E/bin/python -m pip install -q git+https://github.com/SergeyChere/MeetProxy@v$V; }
+export PATH="$E/bin:$PATH"   # repeat in every new shell
 cd <project repo> && meet init && meet status
 ```
 

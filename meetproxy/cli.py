@@ -339,6 +339,8 @@ def main():
     DIR = mailbox_dir()
     p = argparse.ArgumentParser(prog="meet", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    from .runner import VERSION
+    p.add_argument("--version", action="version", version=f"meet {VERSION}")
     s = p.add_subparsers(dest="c", required=True)
     s.add_parser("init").set_defaults(f=cmd_init)
     for name, f in (("send", cmd_send), ("run", cmd_run)):

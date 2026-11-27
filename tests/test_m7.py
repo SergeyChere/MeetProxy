@@ -203,7 +203,11 @@ INSTALL_FILES = ["colab_runner.ipynb", "README.md", "meetproxy/guide.md", "meetp
 @pytest.mark.parametrize("f", INSTALL_FILES)
 def test_installs_are_pinned_to_the_current_release(f):
     text = open(os.path.join(ROOT, f)).read()
-    urls = re.findall(r"git\+https://github\.com/SergeyChere/MeetProxy[^\s\"'`)}\\]*", text)
+    for var in ("$V", "$WANT"):                      # a shell variable holding the version
+        if "@v" + var in text:
+            assert re.search(rf"(V|WANT)=\"?(\$\{{MEET_VERSION:-)?{re.escape(version())}", text), f
+            text = text.replace("@v" + var, "@v" + version())
+    urls = re.findall(r"git\+https://github\.com/SergeyChere/MeetProxy[^\s\"'`)};\\]*", text)
     assert urls, f
     assert all(u.endswith(f"@v{version()}") for u in urls), urls
 

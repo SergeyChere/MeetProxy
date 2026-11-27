@@ -17,8 +17,12 @@ From the root of the user's project repository (it must have a GitHub `origin` y
 bash <skill-dir>/scripts/setup.sh
 ```
 
-It installs the `meet` command (`pip install git+https://github.com/SergeyChere/MeetProxy@v0.7.0`),
-opens the mailbox in `.meetproxy/` (git-excluded) and prints the runner status.
+It uses `meet` only if `meet --version` is exactly the expected release, opens the mailbox in
+`.meetproxy/` (git-excluded) and prints the runner status. If MeetProxy is missing it **exits with
+code 2 and installs nothing**: ask the user, and with their consent rerun with `MEET_INSTALL=yes` —
+it creates an isolated venv (`~/.meetproxy/venv-<version>`, installs
+`git+https://github.com/SergeyChere/MeetProxy@v0.7.0` there; system packages are not touched) and
+prints the `export PATH=…` line to run in every later shell.
 
 If it says **no runner is connected**, tell the user this, filling in `<owner/repo>`, then keep
 working on the experiment while you wait:

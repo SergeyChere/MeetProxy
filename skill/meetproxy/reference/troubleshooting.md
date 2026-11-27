@@ -11,5 +11,7 @@
 | `.done` says `wrong gpu` | `# gpu:` header does not match the runtime | Ask the user to switch runtime type, or relax the header |
 | `.done` says `timeout` | Job exceeded `# timeout:` | Raise it, or split the job; partial results stay in `results.csv` |
 | `job <name> exists` | Names run once | Use a new name (`s02b_bench`) |
-| `meet: command not found` after setup | pip installed to a dir not on PATH | Add `$(python3 -m site --user-base)/bin` to PATH |
+| `meet: command not found` after setup | the venv is not on PATH in this shell | Run the `export PATH="$HOME/.meetproxy/venv-<version>/bin:$PATH"` line setup printed |
+| setup exits with code 2 | MeetProxy (this version) is not installed | Ask the user; with consent rerun with `MEET_INSTALL=yes` |
+| `python3 -m venv failed` | the system lacks the venv module | Install `python3-venv` (Debian/Ubuntu), then rerun |
 | Timings jump between runs | Different GPU, or a stray process | Compare only same-GPU runs; the template refuses to start if the GPU is busy |
