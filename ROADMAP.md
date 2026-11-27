@@ -94,11 +94,15 @@ the user has. Design: [docs/DESIGN.md](docs/DESIGN.md).
 - [ ] `local` driver (the agent's own GPU) and today's flow as the `git-mailbox` driver.
 - [ ] Results in `.meetproxy/runs/<job>/` for every backend; optional git sync.
 
-### ⬜ M12 — Colab through the official Colab CLI
+### ⬜ M12 — Colab CLI, backend profiles, tokens
 
+- [ ] Profiles: `meet add`, `meet use`, `meet backends`, `--on <profile>`; the user chooses, every
+      job line names the backend; no silent fallback.
+- [ ] `meet auth set / list / rm`: tokens in the OS keychain (file with mode 600 as fallback, env
+      override for CI); never in chat, config or repo.
 - [ ] `colab-cli` driver: `colab new / upload / exec / download / stop`.
 - [ ] Exact commit on the VM via `git bundle`.
-- [ ] `meet doctor`: finds a working backend, tells the human the one step left.
+- [ ] `meet doctor`: shows what is available here and the one step each backend still needs.
 - [ ] Release policy (idle minutes), never implicit for paid GPUs.
 
 ### ⬜ M13 — One skill for every agent, and release

@@ -27,9 +27,13 @@ cheaply and remembered — on whatever GPU the user has.** That is MeetProxy.
    for servers, provider CLIs/APIs for rented GPUs. MeetProxy adds discipline, not transport.
 4. **Few tokens.** The agent reads one line per job (`gpu ok …` / `gpu WARN …`) and one line per run
    in history. Raw telemetry and charts are for humans.
-5. **Credentials stay with their tools.** MeetProxy never stores tokens or keys: Colab CLI keeps
-   its own sign-in, `ssh` its keys. Jobs never see the runner's credentials.
-6. **No tunnels or open ports of our own.** Where a backend offers SSH (including `colab ssh`), we
+5. **The user chooses the GPU, and always sees which one is used.** MeetProxy suggests what it
+   found; it never switches backend on its own. Every job line names the backend and GPU.
+6. **Tokens live in the OS keychain, never in the repo or the chat.** A backend that has its own
+   sign-in (Colab CLI, `ssh` keys) keeps it; for the rest (RunPod, Vast.ai, Lambda, Colab API,
+   GitHub token for the mailbox) MeetProxy stores the token in the system keychain. The agent never
+   sees a token value. Jobs never see any of them.
+7. **No tunnels or open ports of our own.** Where a backend offers SSH (including `colab ssh`), we
    use it as a client.
 
 ## 3. Architecture
@@ -101,10 +105,53 @@ meetproxy/
 file only when the skill is used). Backend details live in `references/` and are read only when
 needed.
 
-### 3.2 `meet doctor`: choosing a backend
+### 3.2 Choosing a backend: the user decides, `meet doctor` helps
 
-The skill's first step is always `meet doctor`. It probes, in order, and stops at the first that
-works (an explicit choice in `.meetproxy/config.toml` wins):
+**Backends are named profiles** the user sets up once and then picks by name:
+
+```
+meet backends                      # what is configured, what was detected, which is active
+meet add colab                     # profile "colab": official Colab CLI, GPU T4
+meet add lab --ssh me@gpu.uni.edu  # profile "lab": a university server over ssh
+meet add pod --runpod --gpu A100   # profile "pod": RunPod, asks for the API key (keychain)
+meet use lab                       # make "lab" the default for this project
+meet run s01 job.sh --on pod       # one job elsewhere, explicitly
+```
+
+Profiles live in two places, **neither holds a secret**:
+
+| File | Scope | Contains |
+|---|---|---|
+| `~/.config/meetproxy/config.toml` | the user, all projects | profiles: kind, host, default GPU, price policy, *name* of the keychain entry |
+| `.meetproxy/config.toml` | this project (may be committed) | which profile to use, GPU wanted, budget per job |
+
+```toml
+# ~/.config/meetproxy/config.toml
+[profiles.colab]
+kind = "colab-cli"
+gpu = "T4"
+
+[profiles.lab]
+kind = "ssh"
+host = "me@gpu.uni.edu"
+
+[profiles.pod]
+kind = "runpod"
+gpu = "A100"
+credential = "meetproxy/runpod"    # keychain entry name, not the key
+ask_before_start = true            # paid: the agent must ask the user every time
+```
+
+**First use of `/meetproxy`:** no profile yet → the skill runs `meet doctor`, shows the user what is
+possible here ("this machine has no GPU · Colab CLI is installed · no SSH hosts") and **asks which
+to set up**; then creates the profile. It never picks one silently.
+
+**Every later use:** the active profile is used; `meet status` and every job line say it:
+`backend: lab (ssh me@gpu.uni.edu) · gpu: RTX 4090`. If the active profile is down, the agent
+reports it and asks — it does not fall back to another backend by itself.
+
+`meet doctor` diagnoses (it does not choose). It checks, in this order, and reports what each
+needs:
 
 | Order | Backend | Probe | If it fails, the user is told |
 |---|---|---|---|
@@ -115,9 +162,31 @@ works (an explicit choice in `.meetproxy/config.toml` wins):
 | 5 | `colab-api` | API token present | — (allowlist) |
 | 6 | `git-mailbox` | repo has a GitHub origin | "Open this notebook and press Run all" (today's flow) |
 
-Output is one line for the agent and, if needed, one instruction for the human, e.g.
-`backend: colab-cli (T4 available) · ready` or
-`no GPU backend · ask the user: run "colab auth login" in a terminal, then retry`.
+Output is one line per backend for the agent and, if needed, one instruction for the human, e.g.
+`colab-cli: ready (T4)` · `ssh lab: unreachable` ·
+`runpod: no API key · ask the user to run: meet auth set runpod`.
+
+### 3.2a Tokens
+
+```
+meet auth set runpod     # hidden prompt in the user's terminal → system keychain
+meet auth list           # entry names and where they are stored, never values
+meet auth rm runpod
+```
+
+- **Storage:** the OS keychain through the `keyring` library — macOS Keychain, Windows Credential
+  Manager, Linux Secret Service. Where none exists (headless Linux, CI), a file
+  `~/.config/meetproxy/credentials` with mode `600`, and `meet auth list` says so. An environment
+  variable (`MEET_TOKEN_RUNPOD=…`) overrides both, for CI.
+- **Never in the chat.** Typing a token into the conversation puts it into the transcript. The skill
+  therefore never asks for a token in chat; it tells the user to run `meet auth set <name>` in their
+  own terminal (in Claude Code: `! meet auth set runpod`), where input is hidden.
+- **Never in the repo:** config files hold only the keychain entry name; `meet` refuses to write a
+  value that looks like a token into a config file.
+- **Read only when used:** a driver loads its token at the moment it calls the provider, passes it
+  to that call only, and masks it in every log. Jobs on the GPU get none of them.
+- **Own sign-ins stay where they are:** Colab CLI (`colab auth login`), `ssh` keys, `gcloud`.
+  MeetProxy only checks that they work.
 
 ### 3.3 The core contract (unchanged)
 
@@ -171,7 +240,9 @@ used by every driver, so measurements are comparable across backends.
 
 ## 4. Security
 
-- No MeetProxy secrets store: Colab CLI, `ssh`, provider CLIs keep their own credentials.
+- Tokens for providers without their own sign-in live in the OS keychain (file with mode `600` as
+  a fallback), entered only in the user's terminal, never in chat, config or repo.
+- Colab CLI, `ssh`, `gcloud` keep their own credentials; MeetProxy only checks them.
 - Jobs get no backend credentials; secrets are masked in logs and result files (as in 0.5).
 - Each job runs exactly the requested commit, or does not run (exit -3).
 - `release` never happens implicitly for paid resources unless the user set a policy.
@@ -182,7 +253,7 @@ used by every driver, so measurements are comparable across backends.
 | Phase | Result |
 |---|---|
 | **1. Core split** | `meet-wrap.py` extracted; driver interface; `local` and `git-mailbox` drivers on it; `.meetproxy/runs/` |
-| **2. Colab CLI** | `colab-cli` driver; `meet doctor`; bootstrap installs pinned `meet` (and offers the Colab CLI) |
+| **2. Colab CLI, profiles, tokens** | `colab-cli` driver; profiles (`meet add / use / backends`, `--on`); `meet auth` with keychain; `meet doctor`; bootstrap installs pinned `meet` (and offers the Colab CLI) |
 | **3. Skill for every agent** | skill rewritten around `doctor`; `references/`; Claude plugin; Codex/ChatGPT package (`agents/openai.yaml`, OpenAI plugin) |
 | **4. SSH and rented GPUs** | `ssh` driver, `meet add-host`; RunPod / Vast provisioning via their CLIs |
 | **5. Chat without a shell** | hosted MCP server exposing the same contract (needs its own security review) |
@@ -195,4 +266,6 @@ used by every driver, so measurements are comparable across backends.
 - `put` for Colab CLI: upload a `git bundle` (exact commit, works for private repos without a token
   on the VM) vs clone on the VM (needs a token there). Bundle is the default proposal.
 - Keep-alive and idle release on Colab CLI: rely on its daemon, plus our `release` policy.
+- Keychain inside cloud sandboxes (Claude Code web, Codex cloud) does not exist: there only the
+  environment-variable override and the git mailbox apply.
 - Naming inside Codex/ChatGPT: `$meetproxy` / `@meetproxy`; the CLI command stays `meet`.
