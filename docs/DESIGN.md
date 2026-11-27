@@ -1,9 +1,12 @@
 # MeetProxy design: reproducible GPU experiments for AI agents
 
-Status: revised proposal, 27 Nov 2026 (v2.1). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.2). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
-evaluation protocol, a feasibility spike first). The contract is agreed **before** production code
+evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
+window, per-operation retry policy, history-free snapshots by archive, per-attempt storage, separate
+execution / delivery / correctness / comparison verdicts, a GO / ITERATE / STOP pilot, beta before
+new adapters). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
@@ -114,7 +117,9 @@ stateDiagram-v2
     RUNNING --> FINISHED_ERR: job failed or deadline
     RUNNING --> CANCELLED: cancel confirmed by backend
     RUNNING --> UNKNOWN: connection lost
+    UNKNOWN --> STAGING: reconcile finds the acquired session, nothing started
     UNKNOWN --> RUNNING: reconcile finds the wrapper alive
+    UNKNOWN --> CANCELLED: reconcile finds a cancel acknowledgement
     UNKNOWN --> FINISHED_OK: reconcile finds a manifest, exit 0
     UNKNOWN --> FINISHED_ERR: reconcile finds a manifest, failure
     UNKNOWN --> LOST: no evidence; closed explicitly by the user
@@ -138,8 +143,10 @@ stateDiagram-v2
 - **Absence is not evidence.** A process that is gone without a manifest is never declared
   `CANCELLED` or successful; it stays `UNKNOWN` until reconcile finds evidence or the user closes
   it as `LOST`.
-- `CANCELLED` only when the backend confirms the cancel; a failed cancel leaves the run where it was
-  and says so.
+- `CANCELLED` only with positive evidence: the backend confirms, or the wrapper wrote a cancel
+  acknowledgement carrying the job's identity. A failed cancel leaves the run where it was and says
+  so.
+- A recovered acquire goes back to `STAGING` without acquiring again.
 - After a reconnect a live run returns to `RUNNING` and is observed again — never started again.
 
 ### 4.2 Delivery, cleanup and what the user sees
@@ -149,15 +156,42 @@ stateDiagram-v2
 | delivery | `PENDING → FETCHING → VERIFIED` · `PARTIAL` (some required files missing) · `BLOCKED` (a required file withheld, e.g. it contains a secret) · `CORRUPT` (checksum mismatch, retried) |
 | cleanup | `KEPT` · `RELEASING → RELEASED` · `BORROWED` (never touched) · `ORPHAN_SUSPECTED` (reported, see section 5) |
 
-The user-facing result is **`READY`** only when the remote outcome is final *and* every required
-artifact is `VERIFIED`. Otherwise it is `PARTIAL`, `BLOCKED` or `UNKNOWN` — the execution facts are
-kept either way. Checksums prove the transfer, not that the measurement is right.
+Four verdicts are kept apart, because each answers a different question:
+
+| Verdict | Question | Values |
+|---|---|---|
+| execution | what happened to the job? | the remote outcome above |
+| delivery | did its artifacts arrive intact? | `READY` (every required artifact `VERIFIED`) · `PARTIAL` · `BLOCKED` · `UNKNOWN` |
+| correctness | is the output right? | `CORRECT` · `INCORRECT` · `NOT_CHECKED` (no oracle) |
+| comparison | is the candidate faster? | `FASTER` / `SLOWER` / `NO_DIFFERENCE` · `INSUFFICIENT_DATA` · `NOT_COMPARABLE` |
+
+`READY` means delivery only — not success, not correctness. **Required artifacts depend on the
+outcome:** a finished job requires its manifest, log and declared outputs; a failed job requires its
+manifest and log (so the failure is visible and diagnosable, never mistaken for success). Checksums
+prove the transfer, not the measurement.
+
+**Live diagnostics vs finalized artifacts.** Heartbeat and log streaming while a job runs are
+bounded, untrusted diagnostic streams (size-capped, shown as text, never parsed into results).
+Results come only from artifacts read after the job finalized.
 
 ### 4.3 Operation journal: what at-most-once means here
 
-- A local **SQLite** journal (standard library, no server). Every external action is an operation
-  with a unique key `(run_id, attempt_id, operation)`; the intent row is committed **before** the
-  action, under a lock, and the outcome row after it.
+- A local **SQLite** journal (standard library, no server; WAL mode, file mode 600, synchronous
+  commits). Every external action is a **logical operation** `(run_id, attempt_id, operation)` with
+  numbered **request generations**: the intent row of a generation is committed **before** the
+  action, under a lock, and its outcome row after it. Consuming an approval and recording the intent
+  happen in one transaction.
+- **Retry policy per operation:**
+
+  | Operation | Repeatable? |
+  |---|---|
+  | observe, fetch status | always (read-only) |
+  | download | yes, after a *verified* failure (checksum mismatch, interrupted); never restarts the computation |
+  | upload / stage | yes, into a fresh attempt directory |
+  | acquire | only when the provider proves the previous one did not happen, or supports idempotent requests |
+  | start | never within the same attempt |
+  | cancel | yes (idempotent by identity) |
+  | release | yes if the provider reports it idempotent; otherwise after checking the session is still there |
 - Two `meet` processes trying the same start: the unique key lets exactly one proceed.
 - Crash between intent and outcome: the operation is *ambiguous*. It is resolved by evidence
   (provider lookup by label or session ID, remote manifest) or left ambiguous and reported. **An
@@ -168,6 +202,9 @@ kept either way. Checksums prove the transfer, not that the measurement is right
   does not, an ambiguous acquire is reported as a possible orphan instead of guessed.
 - A new attempt is an explicit action with a new `attempt_id`; replaying an old journal changes
   nothing.
+- **Scope of the guarantee:** one local run store. A copied or second journal cannot prevent a second
+  start elsewhere; across stores only backend capabilities help (exclusive remote claims, named
+  sessions, the mailbox's single branch). This is stated, not hidden.
 
 No distributed scheduler or central database: a local journal with a clear contract, and a safe
 refusal when reconciliation is impossible.
@@ -207,9 +244,18 @@ profile the user never approved is rejected.
   session left running if the controlling machine disappears — is stated, and automatic paid
   acquisition needs a separate consent to that risk.
 - **Owned vs borrowed:** owned sessions (created by MeetProxy) carry labels with `run_id` where the
-  provider supports labels, and are released after **confirmed delivery** of the required artifacts
-  or an explicit "discard the results". Borrowed sessions (created by the user) are never released or
-  deleted, in any scenario.
+  provider supports labels. Borrowed sessions (created by the user) are never released or deleted,
+  in any scenario.
+- **Bounded hold, not "until delivered":** every owned session has an **absolute expiry** set at
+  approval. After the job ends a **collection window** starts (default 30 min); the session is
+  released after confirmed delivery or, at the latest, when the window or the expiry ends — with the
+  **disposition the user approved in advance** (default: release and keep whatever was delivered;
+  the run stays `PARTIAL` / `BLOCKED`, never `READY`). A withheld or corrupt required file never
+  keeps a paid session alive indefinitely.
+- **Early persistence:** the manifest and small checkpoints are fetched while the job runs (when
+  allowed), so an expiry loses as little as possible.
+- **Cleanup obligations are journaled** and survive a restart of `meet`; unattended paid acquire is
+  refused unless the residual risk (best-effort cleanup) was approved.
 - **Cost is the session**, including upload, idle time and download. Unknown price → consent or
   refusal. No monetary cap is promised where the provider cannot enforce one.
 
@@ -217,9 +263,11 @@ profile the user never approved is rejected.
 
 - Consent to send code is bound to **repository, destination identity and data kind**; a new
   repository to an already-approved host is not sent silently.
-- Transfer scope is explicit: by default a **snapshot of the one commit without history** (a git
-  bundle limited to that commit's tree, or an archive with the SHA recorded), never the full
-  history unless approved. Size quotas are checked before the transfer.
+- Transfer scope is explicit: by default a **snapshot of the one commit without history** —
+  `git archive` of the commit plus a manifest (source commit ID, tree listing with blob hashes,
+  archive digest) that the wrapper verifies file by file. A normal `git bundle` carries history and
+  is never called history-free; a shallow transfer is used only when declared and disclosed. Size
+  quotas are checked before the transfer.
 
 ## 6. Trust model and credentials
 
@@ -239,9 +287,10 @@ profile the user never approved is rejected.
   file found to contain a known secret is **withheld, not rewritten** (rewriting can corrupt binary
   data); the run says so and its delivery becomes `BLOCKED` if the file was required. An allowlist
   does not catch unknown secrets — the trusted-code model applies.
-- **Safe reading:** artifacts are read only from the run directory **after the job finalized**, opened
-  without following symlinks (`O_NOFOLLOW`, checked against the run root), with size limits.
-  Publishing results to git needs its own consent.
+- **Safe reading:** artifacts are read only from the attempt directory **after the job finalized**,
+  resolving **every path component** relative to that directory without following symlinks (directory
+  file descriptors with `O_NOFOLLOW` at each step, not only on the last name), with size and count
+  quotas; a missing manifest blocks delivery. Publishing results to git needs its own consent.
 - **Logs and results are data, never instructions:** nothing read back from a run is executed or
   treated as a command by the core.
 
@@ -256,7 +305,8 @@ Two objects, because some facts exist only after a machine was obtained.
 | repository + full commit SHA, transfer scope | required |
 | job script digest (SHA-256), parameters, seed | required |
 | requested backend profile and GPU | required |
-| policy snapshot (limits and approval in force) | required |
+| wrapper version + digest and protocol version (pinned) | required |
+| policy snapshot (limits in force at submit) | required |
 | benchmark spec and oracle digest | when comparing |
 | declared dependencies (lock / image digest) and datasets (ID / hash) | when declared |
 
@@ -269,10 +319,17 @@ Two objects, because some facts exist only after a machine was obtained.
 | GPU model, driver, CUDA, toolchain versions, Python | required (recorded by the wrapper) |
 | clocks / power limit at start, other processes on the GPU | when available |
 | dependency and dataset evidence (hashes found on the machine) | when declared |
+| approval evidence for this attempt (each attempt is re-authorized) | required |
 | artifact list with sizes and SHA-256 | required |
 
 - Changing the branch after submit does not change the run. Two attempts share one `RunSpec` and keep
   their own fingerprints.
+- **Storage:** `.meetproxy/runs/<run_id>/spec.json` and `.meetproxy/runs/<run_id>/attempts/<attempt_id>/`
+  (manifest, journal extract, artifacts) — attempts never overwrite each other.
+- A retry with a different wrapper, or after the approval expired, is rejected — or explicitly becomes
+  a new `RunSpec`.
+- *Today's mailbox flow already pins the submitted commit (`# commit:` header, since 0.6.x); a job
+  without one is marked unpinned.*
 - A **clean workspace** per attempt; a mismatch with a required declared dependency stops the
   attempt before the job starts. Git LFS and submodules: explicit refusal in the MVP.
 - **No promise of full reproducibility** beyond what is declared: undeclared dependencies, data and
@@ -286,8 +343,11 @@ Required for any "faster / slower" claim.
   better), variant, repeat, value, valid`. Comparisons only between identical metric, unit and phase.
 - **CUDA timing** synchronizes the measured region (events or explicit synchronize); the measured
   phase is declared (e.g. kernel only, end-to-end).
-- **Correctness oracle** fixed independently of the candidate, its digest stored in the RunSpec; a
-  changed oracle is detected and the comparison refused. A wrong output is rejected even if faster.
+- **Correctness oracle** fixed independently of the candidate, its digest stored in the RunSpec; the
+  check is run by **core-controlled code** against the job's declared outputs (not by the job
+  itself); a changed oracle is detected and the comparison refused. A wrong output is rejected even
+  if faster. In trusted-code mode this guards against mistakes, not against a job that deliberately
+  forges its outputs — no tamper resistance is claimed.
 - **Protocol:** declared warm-up, baseline and candidate **interleaved** (not all baseline, then all
   candidate), every repeat and outlier stored, exclusion rules declared in advance, uncertainty
   reported (median and spread / interval).
@@ -300,7 +360,9 @@ Required for any "faster / slower" claim.
 ## 9. Backends: one contract, declared capabilities
 
 Each adapter publishes a `CapabilitySet`; the core checks a run's requirements against it **before
-acquire** and fails with a structured error (`unsupported: cancel`) otherwise.
+acquire** and fails with a structured error (`unsupported: cancel`) otherwise. **Every `colab-cli`
+entry below is provisional** until the spike ([docs/spikes/colab-cli.md](spikes/colab-cli.md)) marks
+it PASS.
 
 | Capability | local | colab-cli | ssh | git-mailbox |
 |---|---|---|---|---|
@@ -394,8 +456,16 @@ An exploratory pilot, not a statistical proof — and planned before it is run:
 2. **Same task, same conditions:** one real CUDA experiment (ColorSplit / queens-rect variants), the
    same agent model and version, the same prompt, the same GPU type and budget — **official Colab
    skill alone** vs **MeetProxy**.
-3. **Several paired runs**, not one session each.
+3. **Several paired runs** in **randomized order**, not one session each. Setup and sign-in steps
+   count as manual interventions; the forced-disconnect test is run separately from the main
+   comparison. Every failure is recorded.
 4. **Everything published:** protocol, every run (not only the best), raw data, limitations.
+5. **Decision, fixed in advance:**
+   - **GO** — the primary metric meets the threshold and no constraint is violated (correctness not
+     worse, budget and wall time within limits);
+   - **ITERATE** — a partial advantage or a fixable failure: change the design, run the pilot again;
+   - **STOP** — no advantage, or worse correctness: MeetProxy does not grow beyond what exists.
+   Publishing results does not unlock anything; only GO does.
 
 No token, time or reliability savings are claimed before this.
 
@@ -404,10 +474,13 @@ No token, time or reliability savings are claimed before this.
 | Stage | Done when |
 |---|---|
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 9) is filled with facts. Nothing unsupported is claimed. |
-| **A. Minimal durable contract, local + Colab** | RunSpec/AttemptManifest, policy gate with scoped approvals, SQLite journal, outcome/delivery/cleanup tracks, wrapper identity, benchmark schema and oracle; the local backend and the Colab adapter pass contract and fault-injection tests (below). |
-| **B. Proof of value** | The pre-registered pilot of section 14 published. |
-| **C. SSH + mailbox** | SSH on one Linux host; the git mailbox behind the adapter contract with migration tests. |
-| **D. Packaging** | Claude Code and Codex packages, pinned releases, support matrix, quick start; real user feedback. |
+| **A1. Local vertical slice** | One local run end to end: immutable RunSpec, minimal journal, verified artifacts, verdicts. |
+| **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. |
+| **A3. Benchmark validation** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts. |
+| **A4. Profiles and auth** (as needed) | `meet add / use / backends`, `meet auth`; strict-mode broker and provider token framework stay out until needed. |
+| **B. Proof of value** | The pre-registered pilot of section 14 ends in **GO**; a minimal skill package and install path go to a small external beta. |
+| **C. SSH + mailbox** | Only after GO: SSH on one Linux host; the mailbox behind the adapter contract, migration versioned separately. |
+| **D. Packaging** | Claude Code and Codex packages, pinned releases, tested support matrix, quick start. |
 | **E. On demand** | RunPod / Vast / Lambda provisioning, Colab API, hosted MCP, multi-GPU. |
 
 **Regression scenarios** every adapter must pass before it is declared supported: duplicate starts;
@@ -416,7 +489,8 @@ without a manifest; failed cancel; interrupted transfer; withheld required artif
 enforce expiry; reused approval; branch changed after submit.
 
 **Gate:** no new backend until local + Colab show reliable cancellation and recovery, correct
-results and the pilot of section 14.
+results, and the pilot of section 14 ends in GO. Fault injection and real-backend tests count more
+than a coverage percentage.
 
 ## 16. Non-goals and open questions
 

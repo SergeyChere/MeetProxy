@@ -11,14 +11,14 @@ flowchart LR
     Q["🔧 M7<br/>quick fixes<br/>current mailbox"]
     S0["🧪 Stage 0 · M8<br/>spike: Colab CLI<br/>lifecycle facts"]
     A["🧱 Stage A · M9<br/>durable contract<br/>local + Colab"]
-    B["🔬 Stage B · M10<br/>proof of value<br/>pre-registered pilot"]
+    B["🔬 Stage B · M10<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
     C["🔌 Stage C · M11<br/>SSH + mailbox<br/>as adapter"]
     DD["📦 Stage D · M12<br/>packaging<br/>Claude Code · Codex"]
     E["🌍 Stage E · M13<br/>on demand<br/>providers · Colab API · MCP"]
     PRO["💎 Pro · M14–M15<br/>CUDA profiling"]
     V1["1.0 · M16"]
     D --> Q --> S0 --> A --> B --> C --> DD --> E --> PRO --> V1
-    B -. "gate: no new provider<br/>before this is proven" .-> E
+    B -. "only GO unlocks<br/>new backends" .-> C
 
     classDef done fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
     classDef fix fill:#fdeeee,stroke:#d64545,stroke-width:2px,color:#5a1d1d
@@ -46,7 +46,7 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 | ✅ | **M3 Run history** | `out/history.csv`, `meet history` |
 | ✅ | **M4 Human reports** | `# charts: on` → `report.md` + SVG charts, drawn on the GPU side, no agent tokens |
 | ✅ | **M5 Export** | `meet export` → `meet-runs/`, nothing committed |
-| ✅ | **M6 Hardening** | credentials isolation, exact-commit runs, reliable delivery, trust model |
+| ✅ | **M6 Hardening** | credentials handling, fetch/checkout failures stop the job, actual SHA recorded, reliable delivery, trust model |
 | ✅ | **Rename to MeetProxy** | command `meet`, package `meetproxy`, mailbox branch `meetproxy`: the name no longer ties the project to Colab |
 | ✅ | **Tests and CI** | unit, CLI and end-to-end suite, 99% coverage, CI on every push |
 
@@ -56,6 +56,9 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 
 Small, safe fixes to what users run today, while stage A is designed.
 
+- [x] Jobs are pinned to the submitted commit (`# commit:` from `meet send`); the branch moving on
+      afterwards does not change them; a malformed or missing commit refuses the job; jobs without
+      the header are marked unpinned.
 - [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of stopping the runner.
 - [ ] Timeouts on every git command: a hung network cannot freeze the runner.
 - [ ] `meet status` / `meet wait` notice a stuck `running` (no heartbeat for ~3 min during a job).
@@ -68,53 +71,60 @@ Small, safe fixes to what users run today, while stage A is designed.
 
 ### ⬜ M8 — spike: Colab CLI lifecycle
 
-On one real T4 session: sign-in, acquire, find the session after the client is gone, survive and
-observe after client loss, confirmed cancel, idle vs wall-clock timeouts, server-side expiry,
-bash through Python, exact commit via bundle, verified download, telemetry fields, release.
+With an explicit budget cap, fresh names and directories per scenario, and a session inventory
+before and after every acquire and release: sign-in, acquire and idempotency, survival and observe
+after client loss, cancel confirmed by an identity-bound acknowledgement (versus external kill and
+stale evidence), idle vs wall-clock timeouts, expiry observations kept apart from documented
+guarantees, bash through Python, a history-free snapshot by `git archive` + manifest, verified
+download, telemetry fields, idempotent release. Every capability ends PASS / FAIL / UNKNOWN.
 Scenario and results: [docs/spikes/colab-cli.md](docs/spikes/colab-cli.md). Fills the capability
 table in DESIGN §9 with facts; nothing unsupported is claimed afterwards.
 
 ## Stage A — minimal durable contract, local + Colab
 
-### ⬜ M9 — the contract on the local GPU and on Colab
+### ⬜ M9 — the contract on the local GPU and on Colab, as thin slices
 
-- [ ] `RunSpec` (requested, immutable) and `AttemptManifest` (what actually ran, per attempt);
-      clean worktree per attempt; commit snapshot without history.
-- [ ] Policy gate: user policy over project wishes; approvals bound to operation, resolved config,
-      budget, expiry and uses, consumed atomically; default deny; strict mode needs confirmation
-      outside the agent. Tests call the CLI directly, without the skill.
-- [ ] SQLite operation journal: unique `(run_id, attempt_id, operation)`, intent before action, lock;
-      ambiguous operations never repeated; wrapper identity (nonce, boot ID, start time).
-- [ ] Separate tracks: remote outcome (with `UNKNOWN → RUNNING`, `LOST`, `CANCELLED` only when
-      confirmed), delivery (`VERIFIED / PARTIAL / BLOCKED / CORRUPT`), cleanup; user result `READY`
-      only after verified delivery.
-- [ ] Job deadline vs session expiry: hard TTL only where the spike proved it; otherwise best-effort
-      cleanup, disclosed, with consent.
-- [ ] `BenchmarkSpec`: measurement schema (metric, unit, phase, direction), synchronized CUDA timing,
-      independent oracle with digest, interleaved repeats, all samples kept; verdicts
-      `OK / WARN / UNKNOWN / INSUFFICIENT_DATA`.
-- [ ] Wrapper as a versioned zipapp; preflight; minimal job env; safe artifact reading.
-- [ ] `CapabilitySet`, structured errors; `local` and `colab-cli` adapters pass contract tests and
-      the regression scenarios of DESIGN §15.
-- [ ] Profiles (`meet add / use / backends`, `--on`), `meet auth` (keychain; plain file opt-in),
-      read-only `meet doctor --json`.
+**A1 · local vertical slice**
+- [ ] One local run end to end: `RunSpec` (`runs/<run_id>/spec.json`), attempt directory, minimal
+      SQLite journal (logical operations, request generations, per-operation retry policy),
+      `git archive` snapshot with manifest, verified artifacts, the four verdicts (execution,
+      delivery, correctness, comparison).
+- [ ] Policy gate with scoped approvals, consumed with the intent in one transaction; default mode
+      labeled honestly (protects against mistakes, not against the agent).
+
+**A2 · Colab lifecycle** (only capabilities the spike marked PASS)
+- [ ] `colab-cli` adapter: owned sessions, absolute expiry, bounded collection window with an
+      approved disposition, early manifest/checkpoints, journaled cleanup obligations.
+- [ ] Disconnect, observe, reconnect without restart, cancel with identity-bound acknowledgement.
+- [ ] The regression scenarios of DESIGN §15 as fault-injection tests.
+
+**A3 · benchmark validation**
+- [ ] Measurement schema, synchronized CUDA timing, core-run oracle against declared outputs,
+      interleaved repeats, all samples kept, comparison verdicts.
+
+**A4 · profiles and auth** (as needed)
+- [ ] `meet add / use / backends`, `--on`, `meet auth` (keychain; plain file opt-in), read-only
+      `meet doctor --json`. Strict-mode broker stays out until needed.
 
 ## Stage B — proof of value
 
-### ⬜ M10 — pre-registered pilot against the official Colab skill
+### ⬜ M10 — pre-registered pilot, then a small beta
 
 - [ ] Before the first run: primary metric (manual interventions per correct result), constraints
       (budget, wall time, correctness), success threshold, forced-disconnect scenario.
 - [ ] Same CUDA task (ColorSplit / queens-rect variants), same agent model and prompt, same GPU and
-      budget; several paired runs: official Colab skill alone vs MeetProxy.
+      budget; several paired runs in randomized order: official Colab skill alone vs MeetProxy;
+      setup and sign-in count as interventions; disconnect tested separately; all failures recorded.
 - [ ] Everything published: protocol, every run, raw data, limitations.
+- [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
+- [ ] On GO: a minimal skill package and install path to a small external beta; collect feedback.
 
-**Gate:** no new backend until local + Colab show reliable cancellation and recovery, correct
-results and this pilot.
+**Gate:** only **GO** unlocks new backends — publishing the pilot is not enough. Local + Colab must
+also show reliable cancellation and recovery and correct results.
 
 ## Stage C — SSH and the mailbox
 
-### ⬜ M11 — two more adapters on the same contract
+### ⬜ M11 — two more adapters on the same contract (only after GO)
 
 - [ ] `ssh` adapter on one Linux host (borrowed sessions, never released by us).
 - [ ] The git mailbox behind the adapter contract (for sandboxes that reach only GitHub), with

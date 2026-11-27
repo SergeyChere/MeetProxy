@@ -16,7 +16,8 @@ except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
+SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRANCH = os.environ.get("MEET_BRANCH", "meetproxy")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
 
@@ -239,10 +240,12 @@ class Runner:
             return False
         return sent > self.t_start
 
-    def update_workdir(self, branch=None):
-        """Check out the newest pushed commit of `branch` (default: the remote default branch).
-        Returns (error or None, description, full sha): a job must run exactly what the agent
-        pushed, so a failed fetch or checkout means the job does not run at all."""
+    def update_workdir(self, branch=None, commit=None):
+        """Check out the commit the job was submitted with (`# commit:`), or — for legacy jobs
+        without one — the newest pushed commit of `branch`. Returns (error or None, description,
+        full sha). A failed fetch or checkout means the job does not run at all."""
+        if commit is not None and not SHA_RE.fullmatch(commit):
+            return f"bad commit header: {commit[:60]!r} (want a full 40-hex SHA)", "", None
         if not os.path.isdir(os.path.join(self.workdir, ".git")):
             return None, "workdir is not a git repo", None
         for attempt in range(3):
@@ -252,13 +255,23 @@ class Runner:
             time.sleep(2 * attempt)
         else:
             return f"fetch failed: {redact(f.stderr.strip())[:300]}", "", None
-        target = f"origin/{branch}" if branch else "origin/HEAD"
+        if commit:
+            have = lambda: git(self.workdir, "cat-file", "-e", f"{commit}^{{commit}}",
+                               check=False).returncode == 0
+            if not have():  # not on any fetched branch: ask for the object itself
+                git(self.workdir, "fetch", "-q", "origin", commit, check=False)
+            if not have():
+                return f"commit not found on the remote: {commit[:12]} (not pushed?)", "", None
+            target, how = commit, f"{branch or 'detached'}, pinned"
+        else:
+            target = f"origin/{branch}" if branch else "origin/HEAD"
+            how = f"{branch or 'default branch'}, branch head at run time"
         r = git(self.workdir, "checkout", "-q", "--force", "--detach", target, check=False)
         if r.returncode:
             return f"checkout failed: {target}: {redact(r.stderr.strip())[:300]}", "", None
         sha = git(self.workdir, "rev-parse", "HEAD", check=False).stdout.strip()
         head = git(self.workdir, "log", "-1", "--format=%h %s", check=False).stdout.strip()
-        return None, f"code {head} ({branch or 'default branch'})", sha
+        return None, f"code {head} ({how})", sha
 
     def finish(self, name, done):
         with open(self.mb.p("out", name + ".done"), "w") as f:
@@ -289,7 +302,11 @@ class Runner:
             self.finish(name, done)
             self.mb.push(f"{name}: skipped, wrong gpu")
             return
-        err, done["code"], sha = self.update_workdir(header(script, "branch"))
+        want = header(script, "commit")
+        err, done["code"], sha = self.update_workdir(header(script, "branch"), want)
+        done["pinned"] = want is not None
+        if want:
+            done["requested_commit"] = want
         if sha:
             done["commit"] = sha
         if err:

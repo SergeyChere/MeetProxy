@@ -125,7 +125,7 @@ def test_stop_only_stops_runners_started_before_it(rn):
 
 def test_update_workdir(rn, world):
     err, msg, sha = rn.update_workdir()
-    assert err is None and msg.startswith("code ") and "v1" in msg and "(default branch)" in msg
+    assert err is None and msg.startswith("code ") and "v1" in msg and "(default branch, branch head at run time)" in msg
     assert len(sha) == 40
     err, msg, sha = rn.update_workdir("no-such-branch")
     assert err.startswith("checkout failed: origin/no-such-branch") and sha is None

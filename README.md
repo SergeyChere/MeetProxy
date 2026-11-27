@@ -86,8 +86,9 @@ agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
 - **Jobs never get your GitHub token.** The runner keeps it out of job environments, out of git
   remote URLs and out of config files; secrets are masked in logs and in every result file before
   it is pushed. Use a fine-grained token limited to this one repository.
-- **Each job runs exactly the pushed commit** of its branch; if that commit cannot be fetched and
-  checked out, the job does not run (`exit -3`) and `.done` says why. `.done` records the full SHA.
+- **Each job runs exactly the commit it was sent with** (the agent's HEAD at `meet send`), even if
+  the branch moves on before the job starts. If that commit is not on GitHub or cannot be checked
+  out, the job does not run (`exit -3`) and `.done` says why. `.done` records the full SHA.
 - **In a public repository, logs and results on branch `meetproxy` are public too.**
 
 ---

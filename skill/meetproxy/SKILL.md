@@ -32,8 +32,9 @@ Check again with `meet status` until it shows `runner: idle | gpu: <name>`.
 
 ## 2. Run an experiment
 
-1. **Commit and push** the code. The GPU runs the latest *pushed* commit of your current branch;
-   uncommitted or unpushed changes never reach it (`meet send` warns about them).
+1. **Commit and push** the code. A job runs exactly the commit you are on when you send it —
+   later pushes do not change it — and only once that commit is on GitHub; uncommitted changes
+   never reach the GPU (`meet send` warns about both).
 2. Write a job script. Start from `templates/job.sh` in this skill: it has the header lines and the
    results CSV already set up.
 3. Run it:
@@ -42,7 +43,7 @@ Check again with `meet status` until it shows `runner: idle | gpu: <name>`.
      `--follow`: it would stream the whole log into your context), then `meet logs s01_bench --tail 50`.
 4. Read the result: the log, `.meetproxy/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
    and `.meetproxy/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
-   fetched or checked out (unpushed branch, typo in `# branch:`) — fix that, resend under a new name.
+   found or checked out (not pushed, typo in `# branch:` / `# commit:`) — fix it, resend under a new name.
 5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
    runner samples the GPU during every job and reports only what was off:
    - `gpu ok: util 97%, mem 41%, 68°C` — nothing to worry about;

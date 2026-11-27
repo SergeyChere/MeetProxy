@@ -15,7 +15,7 @@ def row(done):
     return {
         "job": done.get("job", ""), "end": done.get("end", ""),
         "gpu": (done.get("gpu") or "").split(",")[0].strip(),
-        "commit": m.group(1) if m else "", "branch": m.group(2) if m else "",
+        "commit": m.group(1) if m else "", "branch": m.group(2).split(",")[0] if m else "",
         "seconds": done.get("seconds", ""), "exit": done.get("exit", ""),
         "error": done.get("error", ""),
         "util_avg": st.get("util_avg", ""), "mem_peak_mb": st.get("mem_peak_mb", ""),

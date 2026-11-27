@@ -46,7 +46,7 @@ printf 'cat version.txt\necho token=$MY_TOKEN\necho 1,2 > $MEET_OUT/results.csv\
 # agent pushes new code; the next job must see it
 echo v2 > version.txt && git commit -qam v2 && git push -q origin main
 { printf 'cat version.txt\n' | $P run a2 - --poll 1 --timeout 60 2>/dev/null | grep "^v2" >/dev/null; } && ok "runner pulled new code" || fail "runner pulled new code"
-{ grep -q '"code": "code [0-9a-f]* v2 (main)"' .meetproxy/out/a2.done; } && ok "commit recorded in .done" || fail "commit recorded in .done"
+{ grep -q '"code": "code [0-9a-f]* v2 (main, pinned)"' .meetproxy/out/a2.done && grep -q '"pinned": true' .meetproxy/out/a2.done; } && ok "pinned commit recorded in .done" || fail "pinned commit recorded in .done"
 
 # history: one line per finished job, compact table for the agent
 { grep -q "^a2,.*,0," .meetproxy/out/history.csv 2>/dev/null || { $P history >/dev/null; grep -q "^a2," .meetproxy/out/history.csv; }; } \

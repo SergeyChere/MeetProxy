@@ -58,7 +58,8 @@ def test_meet_dir_env(world, monkeypatch, tmp_path):
 def test_send_pins_branch_and_refuses_duplicates(opened):
     opened.meet("send", "j1", "-", stdin="echo hi\n", check=True)
     body = git(opened.gh, "show", "meetproxy:cmd/j1.sh")
-    assert body.splitlines()[0] == "# branch: main" and "echo hi" in body
+    assert body.splitlines()[0].startswith("# commit: ") and body.splitlines()[1] == "# branch: main"
+    assert "echo hi" in body
     r = opened.meet("send", "j1", "-", stdin="echo again\n")
     assert r.returncode != 0 and "jobs run once" in r.stderr
 
@@ -77,7 +78,7 @@ def test_send_warnings(opened):
     (opened.agent / "version.txt").write_text("local\n")
     git(opened.agent, "commit", "-qam", "local only")
     r = opened.meet("send", "w2", "-", stdin="true\n")
-    assert "the GPU runs the pushed version" in r.stderr
+    assert "is not on GitHub: the job will not run until you push it" in r.stderr
     (opened.agent / "version.txt").write_text("dirty\n")
     r = opened.meet("send", "w3", "-", stdin="true\n")
     assert "uncommitted changes are not sent" in r.stderr

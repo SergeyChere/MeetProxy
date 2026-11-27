@@ -98,7 +98,7 @@ work and answers in one short line:
 | Command | What it does inside |
 |---|---|
 | `meet init` | clones branch `meetproxy` of your repo into `.meetproxy/` (git-excluded), creates the branch if missing |
-| `meet send job sh` | adds `# branch: <your branch>`, warns if the code is not pushed, writes `cmd/job.sh`, commits, pushes; if the runner pushed meanwhile — pulls and retries with backoff |
+| `meet send job sh` | adds `# commit: <your HEAD>` and `# branch: <your branch>`, warns if the commit is not pushed, writes `cmd/job.sh`, commits, pushes; if the runner pushed meanwhile — pulls and retries with backoff |
 | `meet wait job` | pulls every 20 s until `out/job.done` appears; exit code = the job's; prints `.done` without the bulky stats, plus one `gpu_check` line |
 | `meet status` | reads the heartbeat: alive or not, GPU, current job, queue |
 | `meet history` | one line per finished job |

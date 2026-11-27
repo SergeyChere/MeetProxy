@@ -1,94 +1,151 @@
 # Spike: Colab CLI lifecycle
 
-Stage 0 of [DESIGN.md](../DESIGN.md#15-stages-and-acceptance-gates). Goal: learn, on a real session,
+Stage 0 of [DESIGN.md](../DESIGN.md#15-stages-and-acceptance-gates). Goal: learn, on real sessions,
 what the official Colab CLI can and cannot do for MeetProxy's lifecycle — **before** building the
-adapter. Nothing in the design is claimed for Colab until this page holds the facts.
+adapter. Until this page holds results, every Colab capability in DESIGN §9 is **provisional**.
 
-- **Where:** your own computer (Claude Code can run it with you there; the CLI signs in through a
-  browser). It cannot run in a cloud sandbox.
-- **GPU:** one T4 session, the cheapest. Expected total: under 2 hours of runtime.
-- **Rule:** every session created here is named `meet-spike-*` and is stopped at the end (step 13).
-- **Record:** exact commands, full output (or a file next to this page), CLI version, date. Fill the
-  tables at the bottom. "Did not work" is a valid, valuable result.
+Rules of evidence (DESIGN §4.1): **absence is not evidence.** A process that is gone, a missing file
+or an ended session prove nothing about *why*. Only a positive signal tied to the job's identity
+counts (an acknowledgement file with the job's nonce, a provider status naming the session).
 
-## 0. Helper job
+## Before you start
 
-Save as `spike_job.py` in an empty folder. It behaves like the future wrapper: writes its identity,
-then a heartbeat file every 5 s for 5 minutes.
+- **Where:** your own computer; Claude Code can run the steps with you present (the CLI signs in
+  through a browser). Not in a cloud sandbox.
+- **Budget:** decide a cap before step 1 — proposal: **at most 2 T4 sessions at a time, 3 session
+  hours in total**. Write it here: `cap: ____`. Stop at the cap even if steps remain.
+- **Names:** every session is `meet-spike-<scenario>-<random 4 hex>`, never reused.
+- **Inventory:** run `colab sessions` (save the output with a timestamp) **before and after every
+  acquire and every release**. Every session that appears must be accounted for in the cleanup table.
+- **Fresh directories:** every scenario uses its own directory `~/meet-spike/<scenario>-<nonce>/` on
+  the VM, so files from an earlier scenario cannot be mistaken for this one's.
+- **Record:** exact commands, full output (files next to this page), CLI version, UTC timestamps,
+  session IDs (or redacted equivalents). Every capability ends as **PASS / FAIL / UNKNOWN**, and an
+  *observation* (what happened once) is kept apart from a *guarantee* (what the provider documents).
+
+## Helper scripts
+
+`spike_job.py` — behaves like the future wrapper: identity, heartbeat, terminal events, and a
+positive acknowledgement when it is cancelled on purpose.
 
 ```python
-import json, os, sys, time, uuid
-d = os.path.expanduser("~/meet-spike")
-os.makedirs(d, exist_ok=True)
-ident = {"nonce": uuid.uuid4().hex, "pid": os.getpid(),
+import json, os, signal, sys, time, uuid
+d = sys.argv[1]                       # fresh directory per scenario
+quiet = "--quiet" in sys.argv         # no output at all (idle-timeout test)
+seconds = int(next((a.split("=")[1] for a in sys.argv if a.startswith("--seconds=")), "300"))
+os.makedirs(d, exist_ok=False)        # refuses a directory that already exists
+nonce = uuid.uuid4().hex
+ident = {"nonce": nonce, "pid": os.getpid(),
          "boot_id": open("/proc/sys/kernel/random/boot_id").read().strip(),
          "start": open(f"/proc/{os.getpid()}/stat").read().split()[21]}
 json.dump(ident, open(f"{d}/identity.json", "w"))
+def event(kind):
+    with open(f"{d}/events.jsonl", "a") as f:
+        f.write(json.dumps({"event": kind, "nonce": nonce, "t": time.time()}) + "\n")
+def on_term(signum, frame):            # intentional cancel = SIGTERM from the controller
+    event("cancel_ack")
+    sys.exit(143)
+signal.signal(signal.SIGTERM, on_term)
+event("started")
 print("IDENTITY", json.dumps(ident), flush=True)
-quiet = "--quiet" in sys.argv          # step 8: no output at all
-for i in range(60):
+for i in range(seconds // 5):
     open(f"{d}/heartbeat", "w").write(f"{i} {time.time()}\n")
     if not quiet:
         print("tick", i, flush=True)
     time.sleep(5)
-open(f"{d}/done", "w").write("ok\n")
+event("finished")
 print("DONE", flush=True)
 ```
 
-And `spike_probe.py` (prints what is running and the last heartbeat):
+`spike_probe.py <dir>` — what is known about that scenario's job right now.
 
 ```python
-import os, subprocess, time
-d = os.path.expanduser("~/meet-spike")
-for f in ("identity.json", "heartbeat", "done"):
-    p = f"{d}/{f}"
-    print(f, open(p).read().strip() if os.path.exists(p) else "-")
-print("now", time.time())
-print(subprocess.run(["bash", "-c", "ps -eo pid,lstart,cmd | grep spike_job | grep -v grep"],
-                     capture_output=True, text=True).stdout)
+import json, os, sys, time
+d = sys.argv[1]
+ident = json.load(open(f"{d}/identity.json")) if os.path.exists(f"{d}/identity.json") else None
+events = [json.loads(l) for l in open(f"{d}/events.jsonl")] if os.path.exists(f"{d}/events.jsonl") else []
+alive = False
+if ident and os.path.exists(f"/proc/{ident['pid']}/stat"):
+    same_boot = open("/proc/sys/kernel/random/boot_id").read().strip() == ident["boot_id"]
+    same_start = open(f"/proc/{ident['pid']}/stat").read().split()[21] == ident["start"]
+    alive = same_boot and same_start            # a reused PID does not count
+hb = open(f"{d}/heartbeat").read().strip() if os.path.exists(f"{d}/heartbeat") else None
+print(json.dumps({"now": time.time(), "identity": ident, "alive": alive, "heartbeat": hb,
+                  "events": [e["event"] for e in events if ident and e["nonce"] == ident["nonce"]]}))
 ```
 
-## Steps
+`spike_cancel.py <dir>` — cancels only the process that matches the recorded identity.
 
-| # | What | Commands (adapt to `colab --help`) | Record |
+```python
+import json, os, signal, sys
+d = sys.argv[1]
+ident = json.load(open(f"{d}/identity.json"))
+stat = open(f"/proc/{ident['pid']}/stat").read().split()
+if stat[21] != ident["start"]:
+    sys.exit("identity mismatch: not our process")
+os.kill(ident["pid"], signal.SIGTERM)
+print("SIGTERM sent to", ident["pid"])
+```
+
+## Scenarios
+
+| # | Scenario | Steps (adapt flags to `colab --help`) | Record |
 |---|---|---|---|
 | 1 | Install, version | `pip install google-colab-cli` · `colab --version` · `colab --help > help.txt` | version, Python, OS |
-| 2 | Sign-in | the CLI's auth command | interactive only? needs a TTY? where are credentials stored? can it be checked without side effects (for `meet doctor`)? |
-| 3 | Acquire | `colab new -s meet-spike-1 --gpu T4` | time to ready; output format (JSON option?); run it **again with the same name** — error, reuse, or a second session? (idempotency) |
-| 4 | Discovery | `colab sessions` before and after step 3; then close the terminal, open a new one, run it again | is the session found by name after the client is gone? machine-readable output? |
-| 5 | Long job, then lose the client | `colab exec -s meet-spike-1 -f spike_job.py`; after ~30 s kill the local process (`Ctrl-C`, then separately `kill -9` in a second try) | does the remote job keep running? (check with step 6) |
-| 6 | Observe after loss | `colab exec -s meet-spike-1 -f spike_probe.py` (or `colab ssh`) | heartbeat still advancing? same identity (nonce, boot_id, start)? can stdout of the running job be re-attached at all? |
-| 7 | Cancel | kill the remote job via `colab ssh` or a small exec script using the identity from step 6; probe again | is cancellation confirmable (process gone **and** no `done` file)? |
-| 8 | Idle vs wall-clock | `colab exec … -f spike_job.py --quiet` (no output for 5 min); try the CLI's timeout option if any | does exec cut a silent job? after how long? is the limit idle-based or wall-clock? |
-| 9 | Session expiry | after step 8, stop any keep-alive the CLI runs locally (see `--help`), leave the session idle; check `colab sessions` every 10 min (up to 90 min) | does Colab end an idle session by itself, after how long? is there a server-side TTL option? what happens if the laptop sleeps? |
-| 10 | Bash | `colab exec` a Python one-liner that runs `subprocess.run(["bash","-c","nvidia-smi; echo ok"])` | can the wrapper run arbitrary bash through Python? |
-| 11 | Transfer | in a test repo: `git bundle create one.bundle HEAD`; `colab upload` it; on the VM `git clone one.bundle && git rev-parse HEAD`; `colab download` a 50 MB file and compare `sha256sum` | exact SHA arrives? resumable/partial download behaviour? |
-| 12 | GPU facts | exec: `nvidia-smi --query-gpu=index,name,memory.total,driver_version,clocks.max.sm,power.limit,clocks_throttle_reasons.active --format=csv` | which fields work on this driver; CUDA version (`nvcc --version` / `nvidia-smi`) |
-| 13 | Release | `colab stop -s meet-spike-1`; `colab sessions` | gone? any session left from steps 3–9? (stop them all) |
+| 2 | Sign-in | the CLI's auth command; then its status command | interactive only? needs a TTY? where stored? can status be checked **without side effects** (for `meet doctor`)? |
+| 3 | Acquire + inventory | inventory · `colab new -s meet-spike-acq-<rnd> --gpu T4` · inventory | time to ready, output format, session ID |
+| 4 | Same name twice | inventory · repeat 3 with the **same** name · inventory · release any extra session at once | error, reuse, or a second (paid) session? → idempotency |
+| 5 | Normal exit | upload the helpers; `colab exec -s … -f spike_job.py -- ~/meet-spike/exit-<n> --seconds=30` · probe | `finished` event present, `alive: false` |
+| 6 | Client killed, job alive? | start `spike_job.py ~/meet-spike/kill-<n>` (300 s); after 30 s `kill -9` the **local** `colab` process; then probe from a new terminal | does the job keep running (`alive: true`, heartbeat advancing, same nonce)? |
+| 7 | Reconnect | from a new terminal: `colab sessions`, probe; try any CLI way to re-attach to the job's output | session found by name after client loss? output re-attachable, or only files? |
+| 8 | Intentional cancel | `spike_cancel.py` on the job from 6 · probe | `cancel_ack` with the matching nonce → **only this** counts as CANCELLED |
+| 9 | External kill (no ack) | start a job in a fresh dir; kill it with `kill -9 <pid>` via exec/ssh · probe | gone, **no** `cancel_ack` → must stay UNKNOWN for the adapter, never CANCELLED |
+| 10 | Stale evidence | probe the directory of scenario 5 while pretending it is a new job's | nonce mismatch is detected; stale `finished` is not taken for the new job |
+| 11 | Idle vs wall-clock | `spike_job.py … --quiet --seconds=600`; also the CLI's timeout option if any | does `exec` cut a silent job, when? does it cut a talkative long job? idle limit or wall-clock? |
+| 12 | Expiry, idle session | stop any local keep-alive the CLI runs; leave a session idle; inventory every 10 min up to 90 min | ends by itself? when? (observation only) |
+| 13 | Expiry, client gone during compute | start a 30-min job, then close the CLI and any keep-alive (simulate a sleeping laptop); inventory every 10 min | does compute keep the session alive, does it end, when? (observation only) |
+| 14 | Documented guarantee | search Colab CLI docs for a server-side TTL / max-runtime option | quote + link, or "none found" |
+| 15 | Bash through Python | exec a Python one-liner running `subprocess.run(["bash","-c","nvidia-smi; echo ok"])` | arbitrary bash via the wrapper: yes/no |
+| 16 | Snapshot without history | in a test repo, commit a file `secret.txt`, delete it in the next commit; `git archive --format=tar HEAD -o snap.tar`; write `manifest.txt` = `git rev-parse HEAD` + `git ls-tree -r HEAD`; upload both; on the VM unpack, check every blob hash against the manifest (`git hash-object`), and `tar tf snap.tar \| grep secret` | content matches the manifest; `secret.txt` absent. (A normal `git bundle` carries history — check that too and record it.) |
+| 17 | Verified download | create a 50 MB file on the VM, `sha256sum`, `colab download`, compare; interrupt a download once | checksum match; what an interrupted download leaves behind |
+| 18 | GPU facts | `nvidia-smi --query-gpu=index,name,memory.total,driver_version,clocks.max.sm,power.limit,clocks_throttle_reasons.active --format=csv` | which fields work; CUDA version |
+| 19 | Release, twice | `colab stop -s …` · inventory · `colab stop -s …` again | gone? second stop: error or no-op (idempotency)? |
 
 ## Results
 
-CLI version: … · Date: … · GPU / driver / CUDA: …
+CLI version: … · Date (UTC): … · GPU / driver / CUDA: … · Budget used: … session hours
 
-| Capability (DESIGN §9) | Result | Evidence |
-|---|---|---|
-| acquire a GPU by type | | step 3 |
-| idempotent acquire (same name twice) | | step 3 |
-| find the session after the client is gone | | step 4 |
-| job survives client loss | | step 5–6 |
-| observe a running job after reconnect | | step 6 |
-| re-attach to its output stream | | step 6 |
-| confirmed cancel | | step 7 |
-| exec timeout semantics (idle / wall-clock) | | step 8 |
-| server-side session expiry | | step 9 |
-| arbitrary bash via Python | | step 10 |
-| exact commit via bundle | | step 11 |
-| verified download | | step 11 |
-| telemetry fields available | | step 12 |
-| release | | step 13 |
-| sign-in checkable without side effects | | step 2 |
+| Capability (DESIGN §9) | PASS / FAIL / UNKNOWN | Observation or guarantee? | Evidence (scenario, file, timestamp) |
+|---|---|---|---|
+| sign-in checkable without side effects | | | 2 |
+| acquire a GPU by type | | | 3 |
+| idempotent acquire (same name) | | | 4 |
+| job survives client loss | | | 6 |
+| find the session after client loss | | | 7 |
+| observe a running job after reconnect | | | 7 |
+| re-attach to its output stream | | | 7 |
+| confirmed cancel (ack tied to identity) | | | 8 |
+| external kill distinguishable from cancel | | | 9 |
+| stale evidence detected | | | 10 |
+| exec timeout semantics (idle / wall-clock) | | | 11 |
+| session expiry when idle | | observation | 12 |
+| session expiry when the client is gone | | observation | 13 |
+| server-side TTL / max runtime | | guarantee? | 14 |
+| arbitrary bash via Python | | | 15 |
+| history-free snapshot verified | | | 16 |
+| verified download | | | 17 |
+| telemetry fields available | | | 18 |
+| idempotent release | | | 19 |
+
+## Cleanup
+
+| Session name | Created (UTC) | Released (UTC) | How confirmed |
+|---|---|---|---|
+| | | | |
+
+Final inventory (must show no `meet-spike-*` session): …
 
 ## Conclusions for the adapter
 
-(to fill after the spike: what the Colab adapter can promise, what it must report as best-effort,
-what is unsupported)
+(to fill after the spike: what the Colab adapter may promise, what it reports as best-effort, what
+is unsupported. Nothing that stayed UNKNOWN is claimed.)

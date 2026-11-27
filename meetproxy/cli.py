@@ -95,28 +95,37 @@ def cmd_init(a):
 
 
 def add_branch(body):
-    """Pin the job to the agent's current branch and warn if its last commit is not pushed."""
+    """Pin the job to the exact commit the agent is on (and name its branch). The runner checks out
+    that commit, not whatever the branch points to when the job starts."""
     top = toplevel()
-    if not top or re.search(r"^#\s*branch:", body, re.M):
+    if not top:
         return body
-    br = sh("git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
-    if not br or br == "HEAD":
-        return body
-    # ask GitHub directly: remote-tracking refs can be missing or stale in shallow/odd clones
-    remote = sh("git", "-C", top, "ls-remote", "origin", f"refs/heads/{br}", check=False)
-    rsha = remote.stdout.split()[0] if remote.returncode == 0 and remote.stdout.strip() else ""
     head = sh("git", "-C", top, "rev-parse", "HEAD", check=False).stdout.strip()
-    if remote.returncode:
-        print("warning: could not reach GitHub to check that your code is pushed", file=sys.stderr)
-    elif not rsha:
-        print(f"warning: branch {br} is not on GitHub yet: `git push -u origin {br}` first",
-              file=sys.stderr)
-    elif rsha != head:
-        print(f"warning: your HEAD {head[:7]} differs from {br} on GitHub ({rsha[:7]}); "
-              f"the GPU runs the pushed version", file=sys.stderr)
+    br = sh("git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    lines = []
+    if head and not re.search(r"^#\s*commit:", body, re.M):
+        lines.append(f"# commit: {head}")
+    if br and br != "HEAD" and not re.search(r"^#\s*branch:", body, re.M):
+        lines.append(f"# branch: {br}")
+    if not lines:
+        return body
+    if br and br != "HEAD":
+        # ask GitHub directly: remote-tracking refs can be missing or stale in shallow/odd clones
+        remote = sh("git", "-C", top, "ls-remote", "origin", f"refs/heads/{br}", check=False)
+        rsha = remote.stdout.split()[0] if remote.returncode == 0 and remote.stdout.strip() else ""
+        on_remote = rsha and (rsha == head or sh(
+            "git", "-C", top, "merge-base", "--is-ancestor", head, rsha, check=False).returncode == 0)
+        if remote.returncode:
+            print("warning: could not reach GitHub to check that your code is pushed", file=sys.stderr)
+        elif not rsha:
+            print(f"warning: branch {br} is not on GitHub yet: the job will not run until you push "
+                  f"it (`git push -u origin {br}`)", file=sys.stderr)
+        elif not on_remote:
+            print(f"warning: commit {head[:7]} is not on GitHub: the job will not run until you push "
+                  f"it", file=sys.stderr)
     if sh("git", "-C", top, "status", "--porcelain", "-uno", check=False).stdout.strip():
         print("warning: uncommitted changes are not sent to the GPU", file=sys.stderr)
-    return f"# branch: {br}\n" + body
+    return "\n".join(lines) + "\n" + body
 
 
 def cmd_send(a):

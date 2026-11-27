@@ -32,7 +32,7 @@ The agent and the notebook do not need a connection. They need a **shared, versi
 leave messages**, and every developer already has one: a git repository.
 
 - The agent writes a job (a bash script) to the branch `meetproxy` and pushes.
-- A small loop running in the notebook pulls, checks out the agent's newest pushed code, runs the
+- A small loop running in the notebook pulls, checks out exactly the commit the agent sent, runs the
   job, and pushes the log back every 45 seconds, then the exit code, time, GPU and commit.
 - The agent reads the log as it arrives and decides the next step itself.
 
@@ -42,7 +42,7 @@ Then each failure above became a rule in the runner, so it cannot happen again:
 |---|---|
 | stray process slowed later runs | every job runs in its own process group; the whole group is killed at the end, on timeout or stop |
 | numbers from different GPUs compared | the GPU is recorded with every result; a job can require one (`# gpu: A100`) |
-| the notebook ran old code | before each job it checks out the newest pushed commit of the agent's branch and records it |
+| the notebook ran old code | each job carries the commit it was sent with; the notebook checks out exactly that commit and records it |
 | a run died and nobody knew | heartbeat; the agent sees a silent runner and tells the human what to do |
 | a crash lost a whole session | results are pushed during the run, not at the end |
 | tokens in logs | secrets are masked before anything is written |

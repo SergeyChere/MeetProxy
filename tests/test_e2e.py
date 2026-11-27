@@ -106,7 +106,7 @@ def test_job_control_on_a_gpu(world, fake_gpu, monkeypatch):
     git(world.agent, "checkout", "-q", "-b", "claude/feat")
     world.commit_push("v3", **{"version.txt": "v3\n"})
     r = world.run_job("c3", "cat version.txt\n")
-    assert "v3" in r.stdout and "(claude/feat)" in world.done("c3")["code"]
+    assert "v3" in r.stdout and "(claude/feat, pinned)" in world.done("c3")["code"]
 
     assert world.run_job("c4", "exit 7\n").returncode == 7
 

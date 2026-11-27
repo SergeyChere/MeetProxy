@@ -2,8 +2,9 @@
 
 You can run code on the human's Colab GPU. You and the notebook share the branch `meetproxy` of the
 project repository: you write jobs to `cmd/`, the notebook writes logs and results to `out/`.
-Before every job the notebook checks out the **latest pushed commit of the branch you are on**
-(`meet send` adds `# branch: <your branch>` to the job; it warns about unpushed commits).
+Every job runs **exactly the commit you are on when you send it** (`meet send` adds
+`# commit: <your HEAD>` and `# branch: <your branch>`); pushing more commits afterwards does not
+change a job already sent. The commit must be on GitHub — `meet send` warns if it is not.
 
 ## Start (once per session)
 
@@ -28,8 +29,8 @@ If `meet status` says no runner is connected, tell the human exactly this, then 
    job's exit code. For a long run: `meet send`, keep working, `meet wait <job>` later (without
    `--follow`, which streams the whole log into your context), then `meet logs <job> --tail 50`.
 3. Read the log and `.meetproxy/out/<job>.done` (GPU name, full commit SHA, seconds, exit, error).
-   `exit -3` means the job did not run: its commit could not be fetched or checked out (unpushed
-   branch, typo in `# branch:`) — fix that and send it again under a new name.
+   `exit -3` means the job did not run: its commit could not be found or checked out (not pushed,
+   typo in `# branch:` / `# commit:`) — push or fix it and send the job again under a new name.
 4. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output).
    `gpu ok` means nothing was off. `gpu WARN: idle 66% · thermal throttle 12%` lists only what was:
    idle / low util → the GPU waits for CPU, data or copies; throttle or unstable SM clock → timings

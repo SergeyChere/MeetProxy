@@ -66,10 +66,9 @@ Rules that make it conflict-free:
 
 Loop: `pull → pick next job → git pull the project → run → push`, plus a heartbeat.
 
-- **Same code as the agent.** `meet send` adds `# branch: <agent's current branch>` to the job
-  (agents such as Claude Code usually work on their own branch, not `main`) and warns about
-  unpushed or uncommitted changes. Before each job the runner fetches and checks out
-  `origin/<branch>` (default: the remote default branch); the commit goes into the log and `.done`.
+- **Same code as the agent.** `meet send` adds `# commit: <full SHA of the agent's HEAD>` and
+  `# branch: <its branch>` to the job and warns about unpushed or uncommitted changes. The runner
+  checks out **that commit**, not whatever the branch points to when the job starts.
 - **Few commits while idle.** The heartbeat is pushed every `HEARTBEAT_S` (300 s) when idle and
   with every log push while a job runs. `meet status` treats a heartbeat older than 12 minutes as
   a disconnected runtime and tells the agent what to ask the human.
@@ -90,9 +89,12 @@ Loop: `pull → pick next job → git pull the project → run → push`, plus a
   replaced on start). Jobs get the environment without `GH_TOKEN`, `GITHUB_TOKEN`, `GH_PAT`,
   `GIT_CONFIG_*` or any variable holding those values (`job_env`). Jobs still run as the same OS
   user as the runner, so the job code itself must be trusted: that is the README's trust model.
-- **Exact commit.** Before each job the runner fetches (3 tries) and checks out
-  `origin/<branch>`; if either fails, the job is not run: `.done` gets `exit -3` and
-  `fetch failed…` / `checkout failed…`. Otherwise `.done` records the full SHA in `commit`.
+- **Exact commit.** Before each job the runner fetches (3 tries), fetches the requested SHA itself
+  if no branch contains it, and checks it out detached. A malformed `# commit:`, a commit missing on
+  the remote, a failed fetch or checkout: the job is not run, `.done` gets `exit -3` with the reason.
+  `.done` records `requested_commit`, the actual `commit` and `pinned: true`. Jobs without a
+  `# commit:` header (written by hand or by older versions) run the branch head at run time and are
+  marked `pinned: false`.
 - **Delivery.** `Mailbox.push` treats a local commit that never reached the remote as pending:
   the next push sends it, and success is reported only when nothing is left unpushed.
 - **Idle limit.** No new job for `IDLE_MIN` minutes (default 120) → exit. The runner never deletes
