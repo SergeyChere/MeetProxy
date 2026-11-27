@@ -122,11 +122,18 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 **A3 · Benchmark Mode, plans, campaigns** — *Design: §8, §9, §10.1, §10.2, §10.3, §11 · PR-05, PR-11, PR-21, PR-22, PR-23, PR-25*
 - [ ] Benchmark Mode: measurement schema, synchronized CUDA timing, core-run oracle against declared
       outputs, interleaved repeats, all samples kept, comparison verdicts.
-- [ ] Plans: one approval for a set of independent runs; two runs concurrently on two approved
-      profiles (local + Colab, or two Colab sessions); hardware comparison never read as a speed-up.
+- [ ] Plans: one approval for a set of independent runs; a **single-GPU sequential plan** as a
+      first-class case; two runs concurrently on two approved profiles (local + Colab, or two Colab
+      sessions), recommended only when the estimated gain outweighs setup overhead; total time and
+      cost reported; hardware comparison never read as a speed-up.
 - [ ] **Screen on many GPUs, decide on one:** within-device speed-ups for screening; finalists and
       baseline re-run on one reference GPU for the decision; per-GPU winners or `INSUFFICIENT_DATA`
       otherwise; a three-GPU test refuses a global ranking.
+- [ ] **Screening safeguards:** reference GPU declared before screening, validation reserve of
+      budget and time, shortlist rule declared in advance (keeps architecture-sensitive variants);
+      unfinished validation → `INSUFFICIENT_DATA`; a synthetic rank-reversal test passes.
+- [ ] Comparison outcomes with a pre-declared margin: `BETTER` / `NON_INFERIOR` / `WORSE` /
+      `INSUFFICIENT_DATA`.
 - [ ] Oracle from the project's existing tests where possible; no oracle → no verified-winner claim.
 - [ ] **Campaigns:** objective, baseline, oracle, resource envelope, rounds, stop conditions; the
       agent proposes variants, the core records and enforces; best verified result with evidence.
@@ -144,14 +151,17 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 
 ### ⬜ M11 — pre-registered pilot, then a small beta
 
-*Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21, PR-22, PR-26.*
+*Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21, PR-22, PR-23, PR-26.*
 
 - [ ] Before the first run: primary metric (**best verified improvement at a fixed budget and
-      time**), constraints (correctness never worse; manual interventions as an absolute count with a
-      near-zero-baseline fallback), success threshold, forced-disconnect scenario.
+      time**), **two routes to GO** with margins (better outcome; or non-inferior outcome with less
+      interventions, time or cost — deciding metric named in advance), constraints (correctness never
+      worse; real resource limits; manual interventions as an absolute count with a near-zero-baseline
+      fallback), forced-disconnect scenario.
 - [ ] Same CUDA task (ColorSplit / queens-rect variants), same agent model and prompt, same GPU and
       budget; several paired runs in randomized order: **official Colab skill alone**, **direct
-      SSH** (where a host is available) and **SkyPilot** (wherever it supports the same resource and
+      SSH** (where a host is available), **direct local agent execution** (local campaigns) and
+      **SkyPilot** (wherever it supports the same resource and
       task; comparison only, no integration) vs **MeetProxy**; supported and unsupported cases
       reported separately; time to first run, setup and sign-in count; disconnect tested separately;
       hardware and price differences reported separately; all failures recorded.
@@ -159,6 +169,10 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 - [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
 - [ ] The pilot task is a **campaign** (PRODUCT §5), so the comparison measures the promise, not a
       single job.
+- [ ] **Fresh-session memory test:** close the first agent session, resume with a fresh context;
+      report retrieval accuracy, avoidable repeated work, false duplicate suggestions; a justified
+      retest on a changed GPU or input stays possible.
+- [ ] **Sequential vs parallel** on two workloads (one where each should win), by total time and cost.
 - [ ] On GO: a minimal skill package and install path to a small external beta on **local GPU +
       Colab** (target 20 users; the advertised campaign must work on their resources);
       measure, opt-in, activation and repeat use at 7 and 30 days.

@@ -4,7 +4,7 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.5). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.6). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
@@ -15,13 +15,16 @@ telemetry levels, parallel independent jobs under one plan, and cost estimates; 
 PRODUCT rev. 2 (campaigns and experiment memory, agent cost, overhead budget, portable definitions,
 consented adoption metrics); v2.5 follows PRODUCT rev. 3 (screen on many GPUs, decide on one;
 memory suggests instead of banning; oracle reuse; first beta on local GPU + Colab; outcome-based
-pilot metric with SkyPilot as a comparison arm). The contract is agreed **before** production code
+pilot metric with SkyPilot as a comparison arm); v2.6 follows PRODUCT rev. 4 (two pre-registered
+routes to GO, screening safeguards, single-GPU campaigns and a justified choice of parallelism,
+direct local execution as a pilot arm, a fresh-session memory test). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
 
-**Is:** a small, deterministic core behind the product promise (PRODUCT §1): *your agent finishes
-more correct GPU experiments, with less of your time, on the GPUs you already have.* It runs
+**Is:** a small, deterministic core behind the product promise (PRODUCT §1): *better verified GPU
+experiments, less babysitting, same budget — on the GPUs you already have* (a target, not a proven
+claim). It runs
 **experiment campaigns** whose runs are **correct, measured fairly, recoverable after failures,
 cheap to observe and remembered** — on the GPUs the user chose.
 
@@ -412,7 +415,11 @@ Required for any "faster / slower" claim.
 - **Protocol:** declared warm-up, baseline and candidate **interleaved** (not all baseline, then all
   candidate), every repeat and outlier stored, exclusion rules declared in advance, uncertainty
   reported (median and spread / interval).
-- **Verdicts:** `OK`, `WARN`, `UNKNOWN` (no telemetry), `INSUFFICIENT_DATA` (too short, too few
+- **Comparison outcome** against the baseline (or another arm) uses a margin declared before the
+  run: `BETTER` (improvement ≥ margin), `NON_INFERIOR` (within the margin), `WORSE`, or
+  `INSUFFICIENT_DATA` — never a verdict chosen after looking at the numbers. A variant with a wrong
+  output is `REJECTED` whatever its speed.
+- **Telemetry verdicts:** `OK`, `WARN`, `UNKNOWN` (no telemetry), `INSUFFICIENT_DATA` (too short, too few
   repeats, too few valid samples). Short or empty samples never give `gpu ok`. Different hardware
   fingerprints never produce an automatic speed-up claim.
 - Telemetry averages are time-weighted. `nvidia-smi` stays coarse (busy, throttled, near OOM), not a
@@ -465,6 +472,11 @@ Nothing is acquired and nothing runs until the user asks (PR-04): there is no re
 - **Independent jobs only:** each run is a separate RunSpec with its own attempts, journal entries
   and artifacts; runs of a plan never share state. Different profiles may run concurrently
   (e.g. local + Colab, or two Colab sessions); each run states its backend (PR-03).
+- **One GPU is a valid plan.** A campaign may run every variant sequentially on one profile. Before
+  proposing concurrency the core estimates its extra cost — staging and transfer, compilation,
+  environment preparation, the final benchmark — and recommends parallel runs only when the
+  estimated saving in total wall time or cost exceeds it; the user-approved envelope is never
+  widened to make parallelism possible. Reports show total time and cost, not GPU time only.
 - **Scheduling is simple and local:** the core starts runs up to the plan's concurrency on the
   approved profiles, in the plan's order, and stops starting new runs when a limit is reached. No
   queue service, no work stealing across providers.
@@ -477,6 +489,18 @@ Nothing is acquired and nothing runs until the user asks (PR-04): there is no re
   GPU**, and only that benchmark names the winner. If no common GPU is available, the result is a
   **winner per GPU type**, or `INSUFFICIENT_DATA`. A test with three GPU types must refuse a global
   ranking from mixed hardware.
+- **Screening safeguards** (rankings do not always transfer between architectures):
+  - the **reference GPU is declared in the campaign before screening** starts;
+  - a **validation reserve** — part of the approved budget and time — is set aside for the final
+    benchmark; screening cannot spend it;
+  - the **shortlist rule** is declared in advance (e.g. the top *k* per device plus any variant within
+    a declared margin of the best on any device), so a variant that is strong on only one
+    architecture is kept, not dropped;
+  - optionally a **small screening sample on the reference GPU** itself;
+  - if the matched validation cannot complete (reserve exhausted, reference GPU unavailable), the
+    campaign reports `INSUFFICIENT_DATA`, not a winner.
+  A synthetic **rank-reversal** test (variant worst on GPU A, best on reference GPU B) must not
+  produce an unsupported global winner.
 - **Out of scope:** distributed training, collective communication, automatic partitioning of a
   single workload across machines.
 
@@ -494,7 +518,9 @@ A campaign is the product's unit of value (PRODUCT §5): a sequence of plans aim
 | resource envelope | approved profiles, concurrency, time and budget limits (one approval, §5.2) |
 | stop conditions | target reached, envelope exhausted, N rounds without improvement, user stop |
 | rounds | each round is a plan (§10.1) of independent variants |
-| reference GPU | the profile on which finalists and baseline are re-run for the decision (§10.1) |
+| reference GPU | the profile on which finalists and baseline are re-run for the decision, declared before screening (§10.1) |
+| validation reserve | the share of budget and time kept for the matched final benchmark (§10.1) |
+| shortlist rule | which screened variants reach the final benchmark, declared in advance (§10.1) |
 | result | best verified variant from the matched final benchmark (or per-GPU winners / insufficient evidence), its evidence, every rejected variant with its reason, and the verified improvement per dollar and per hour — zero if nothing improved |
 
 - **The agent reasons, the core records and enforces.** The agent proposes the next variants; the
@@ -522,6 +548,9 @@ A campaign is the product's unit of value (PRODUCT §5): a sequence of plans aim
   one line per hypothesis, evidence on request (PR-12).
 - Plain JSON/CSV files, exportable, with configurable retention (PR-16); nothing leaves the machine
   unless the user syncs it.
+- **Tested across sessions:** the pilot (§17) closes the first agent session and resumes with a fresh
+  context; memory must return the prior evidence, and a retest with a changed GPU or input must stay
+  possible. Retrieval accuracy, avoidable repeated work and false duplicate suggestions are reported.
 
 ## 11. Cost estimates
 
@@ -650,22 +679,29 @@ install, auth and cancellation, each backed by a smoke test.
 An exploratory pilot, not a statistical proof — and planned before it is run:
 
 1. **Pre-registered** before the first run: primary metric — **best verified improvement at a fixed
-   budget and time** (PRODUCT §9) —, constraints (correctness never worse; manual interventions as an
-   absolute count, with a fallback rule when a baseline is already near zero), the success threshold,
-   and the forced-disconnect scenario.
+   budget and time** (PRODUCT §9) —, the **two routes to GO** with their margins (better outcome by
+   at least margin *m*; or non-inferior within margin *n* plus a reduction of at least *r* in
+   interventions, elapsed time or total cost — which of these is named in advance), constraints
+   (correctness never worse; real resource limits; manual interventions as an absolute count, with a
+   fallback rule when a baseline is already near zero), and the forced-disconnect scenario.
 2. **Same task, same conditions:** the smallest campaign of PRODUCT §5 on a real CUDA project
    (ColorSplit / queens-rect variants), the same agent model and version, the same prompt, the same
    GPU types, budget and wall-time cap. Arms: **official Colab skill alone**, **direct SSH** (where a
-   host is available), **SkyPilot** wherever it supports the same resource and task, and
-   **MeetProxy**. Supported and unsupported cases are reported separately.
+   host is available), **direct local agent execution** for local campaigns (the agent compiles and
+   runs on the local card with normal scripting and the project's tests, same task, model, oracle and
+   budget), **SkyPilot** wherever it supports the same resource and task, and **MeetProxy**.
+   Supported and unsupported cases are reported separately.
+   Two extra scenarios: a **fresh-session memory test** (§10.3) and **sequential vs parallel** on two
+   workloads — one where parallel should win, one where sequential should (§10.1).
 3. **Several paired runs** in **randomized order**, not one session each. Time to first run,
    setup and sign-in steps count (as time and as manual interventions); hardware and price
    differences across providers are reported separately; the forced-disconnect test is run separately from the main
    comparison. Every failure is recorded.
 4. **Everything published:** protocol, every run (not only the best), raw data, limitations.
 5. **Decision, fixed in advance:**
-   - **GO** — the primary metric meets the threshold and no constraint is violated (correctness not
-     worse, budget and wall time within limits);
+   - **GO** — one of the two pre-registered routes is met and no constraint is violated (correctness
+     not worse, budget and wall time within limits); a tie in outcome with substantial resource
+     savings is a GO, worse correctness never is;
    - **ITERATE** — a partial advantage or a fixable failure: change the design, run the pilot again;
    - **STOP** — no advantage, or worse correctness: MeetProxy does not grow beyond what exists.
    Publishing results does not unlock anything; only GO does.
@@ -685,9 +721,9 @@ machine by default.
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
 | **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec with requirements block, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry, overhead measured (§9.1). |
 | **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. With A1 this gives the first beta's two profiles: local GPU + Colab. |
-| **A3. Benchmark Mode, plans, campaigns** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10.1); a campaign with rounds and stop conditions (§10.2), screening on several GPUs with a matched final benchmark on one reference GPU (§10.1), and experiment memory with duplicate suggestions (§10.3); compute and agent cost (§11). |
+| **A3. Benchmark Mode, plans, campaigns** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10.1); a campaign with rounds and stop conditions (§10.2), single-GPU and parallel plans, screening on several GPUs with a reference GPU declared in advance, a validation reserve, a shortlist rule and a matched final benchmark (§10.1), and experiment memory with duplicate suggestions (§10.3); compute and agent cost (§11). |
 | **A4. Profiles and auth** (as needed) | `meet add / use / backends`, `meet auth`; strict-mode broker and provider token framework stay out until needed. |
-| **B. Proof of value** | The pre-registered pilot of section 17 (vs the official Colab skill and direct SSH, including a parallel plan) ends in **GO**; a minimal skill package and install path go to a small external beta; time to first run measured. |
+| **B. Proof of value** | The pre-registered pilot of section 17 (vs the official Colab skill, direct SSH, direct local execution and SkyPilot where applicable; with the fresh-session memory and sequential-vs-parallel scenarios) ends in **GO**; a minimal skill package and install path go to a small external beta; time to first run measured. |
 | **C. SSH + mailbox** | Only after GO: SSH on one Linux host; the mailbox behind the adapter contract, migration versioned separately. |
 | **D. Packaging** | Claude Code and Codex packages, pinned releases, tested support matrix, quick start. |
 | **E. On demand** | RunPod / Vast / Lambda provisioning, Colab API, hosted MCP, Slurm / Kubernetes / MLflow integrations, Deep telemetry (Nsight). |

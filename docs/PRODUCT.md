@@ -22,16 +22,20 @@ A change starts here and flows down: a new or changed requirement first, then th
 it, then the milestone that builds it. A test keeps the links intact (every `PR-NN` is designed and
 planned, every `§N` exists).
 
-Status: 27 Nov 2026 (rev. 3, after the second product review — refinements only, no new requirements). Everything here is a **hypothesis to
-validate**, not shipped behaviour or customer research. Savings are claimed only after they are
-measured (PR-20).
+Status: 27 Nov 2026 (rev. 4, after the third product review — refinements only, no new requirements).
+Everything here is a **hypothesis to validate**, not shipped behaviour or customer research. Savings
+are claimed only after they are measured (PR-20).
+
+**The specification is frozen.** Further changes come from design partners, experiments or concrete
+implementation constraints — not from more analysis.
 
 ## 1. The promise
 
-> **Your agent finishes more correct GPU experiments, with less of your time, on the GPUs you
-> already have.**
+> **Better verified GPU experiments. Less babysitting. Same budget.** — on the GPUs you already have.
 
-One reason to install, one thing to prove. Everything else — one skill, several GPUs, telemetry,
+A target, not a proven claim (PR-20). "Better" is the research outcome — the best verified result of
+a campaign — not the number of runs; less babysitting is the second, measured benefit. One reason to
+install, one thing to prove. Everything else — one skill, several GPUs, telemetry,
 reports — is a means to this, not the pitch. Running a job on a GPU is not unique (provider skills
 and multi-cloud tools do it, section 4); an **experiment campaign that comes back with a verified
 best result and the evidence for it** is what MeetProxy must be better at than anything else.
@@ -69,6 +73,7 @@ comparison.
 | Alternative | What it offers | What MeetProxy must still do better |
 |---|---|---|
 | **Official Colab CLI + skill** | Colab runtimes, exec, files, SSH, an agent skill | campaigns with correctness, exact source, recovery, memory |
+| **Agent running CUDA directly on a local GPU** | Claude Code or Codex compiles and runs on the user's own card with normal scripting and the project's tests; no extra dependency | the strongest local baseline: MeetProxy must beat it on verified outcome or effort, not only on remote cases |
 | **Agent + direct SSH** | any Linux host | durable status across disconnects, exact source, verified results |
 | **SkyPilot agent skill** | an official agent skill (Claude Code plugin) over 25+ clouds, Kubernetes and Slurm, also existing machines; has shown autoresearch running in parallel on 16 GPUs | strong overlap — not competed with on breadth. Possible edge, to be proven: Colab subscriptions, lower setup friction, the evidence contract (exact source, oracle, matched comparison, memory). **Compared directly in the pilot wherever it supports the same resource and task; not integrated.** |
 | **RunPod agent plugin** | official skills + MCP for Claude Code, Codex and ChatGPT | provider-specific; MeetProxy is about campaigns across the user's existing GPUs |
@@ -77,8 +82,8 @@ comparison.
 | **Ad hoc script by the agent** | anything, once | a tested contract: exact source, budgets, recovery, artifacts, comparisons |
 | **Slurm / Kubernetes / MLflow** | scheduling and tracking at scale | not replaced: SSH and open export into them |
 
-If MeetProxy is not measurably better than the official Colab skill and direct SSH for the initial
-segment's campaigns, it does not grow (PR-20).
+If MeetProxy is not measurably better than the official Colab skill, direct SSH and direct local
+execution for the initial segment's campaigns, it does not grow (PR-20).
 
 ## 5. Target workflow: an experiment campaign
 
@@ -89,12 +94,16 @@ segment's campaigns, it does not grow (PR-20).
    GPUs and limits, stop conditions (PR-22).
 2. It checks the experiment memory: what was tried before and why it was rejected (PR-23).
 3. The user approves the campaign once (PR-07).
-4. Independent variants run concurrently on the approved GPUs (PR-11).
+4. Independent variants run on the approved GPUs — **sequentially on one GPU** (a valid campaign)
+   or concurrently on several when the estimated gain outweighs the extra setup, transfer and
+   compilation (PR-11).
 5. Incorrect outputs are rejected whatever their speed; timings are compared only within compatible
-   environments (PR-05). **Different GPUs screen, one GPU decides:** variants may be screened on
-   several GPU types, but finalists and the baseline are re-run on one reference GPU, and only that
-   matched benchmark names the winner. Without a common GPU the result is a winner per GPU type, or
-   "insufficient evidence" — never a global ranking from mixed hardware.
+   environments (PR-05). **Different GPUs screen, one GPU decides:** the reference (target) GPU is
+   declared **before** screening and part of the budget and time is reserved for the final
+   validation on it. Variants may be screened on several GPU types under a shortlist rule declared in
+   advance that keeps architecture-sensitive candidates; finalists and the baseline are re-run on the
+   reference GPU, and only that matched benchmark names the winner. Without it the result is a
+   winner per GPU type, or "insufficient evidence" — never a global ranking from mixed hardware.
 6. The agent proposes the next variants from the results, inside the approved limits; the core
    records each hypothesis, its lineage and outcome (PR-22, PR-23).
 7. On a stop condition: results verified, owned sessions released (PR-07, PR-10).
@@ -103,9 +112,10 @@ segment's campaigns, it does not grow (PR-20).
    says so.
 
 **The smallest campaign that tests the promise** (the first beta's scope): one CUDA project with an
-existing correctness check, a baseline and 3–5 variants, two GPU profiles (local + Colab, or two
-Colab sessions), one approval, one round of screening and one matched final benchmark, memory of
-what was tried, verified results and released sessions.
+existing correctness check, a baseline and 3–5 variants, one or two GPU profiles (local, Colab, or
+both), one approval, one round of screening and one matched final benchmark, verified results and
+released sessions — then **one follow-up session with a fresh agent context** that must find what
+was tried (and allow a justified retest when the GPU or input changed).
 
 The everyday case stays simple: *"run this on my GPU"* → it runs, the exact commit, one line of
 result (PR-04).
@@ -122,13 +132,13 @@ evidence). The list is closed for now: new needs come from design partners, not 
 | **PR-02** | **Official tools underneath.** Use provider CLIs and sign-ins; never re-implement vendor auth or transport; install adapters only with consent. | Must | no own auth for Colab/SSH; adapter install asks first |
 | **PR-03** | **The user chooses the GPU.** Named profiles; no implicit provider or destination switch; the backend is shown on every result. | Must | contract tests: no run on an unapproved profile |
 | **PR-04** | **Quick Run.** "Run this on a GPU" with minimal metadata, keeping safety and exact source. | Should | quick run needs only the script and a profile |
-| **PR-05** | **Benchmark Mode.** Correctness oracle — reusing the project's existing tests, reference implementations, fixtures or known exact results where possible —, repeats, compatible environments only; heterogeneous GPUs screen, a matched benchmark on one reference GPU decides; incorrect outputs never "win"; no adequate oracle → no verified-winner claim. | Must | an incorrect fast variant is rejected |
+| **PR-05** | **Benchmark Mode.** Correctness oracle — reusing the project's existing tests, reference implementations, fixtures or known exact results where possible —, repeats, compatible environments only; heterogeneous GPUs screen, a matched benchmark on one reference GPU — declared before screening, with budget and time reserved for it — decides; incorrect outputs never "win"; no adequate oracle → no verified-winner claim. | Must | an incorrect fast variant is rejected |
 | **PR-06** | **Exact source.** Every job runs the commit it was submitted with, or does not run. | Must | branch moved after submit → submitted commit runs |
 | **PR-07** | **Paid compute is safe by default.** Default deny, scoped approvals, time limits, bounded session hold, estimates; best-effort vs hard limits disclosed; no monetary cap promised without provider enforcement. | Must | no paid acquire without approval; no unbounded hold |
 | **PR-08** | **No new credential burden.** Reuse official sign-ins; other tokens in the OS keychain; never in chat, config or repo; minimal job environment; same-user limits documented. | Must | tokens never appear in chat or files |
 | **PR-09** | **Code stays where it is by default.** Local and private profiles; consent per repository and destination; history-free snapshots. | Must | no transfer to a new destination without consent |
 | **PR-10** | **Failures are visible and recoverable.** Reconnect, explicit `UNKNOWN`, no silent duplicate runs, partial results kept, a direct-provider escape hatch. | Must | disconnect, crash and interrupted transfer tests |
-| **PR-11** | **Parallel independent jobs** across approved GPUs under one approved plan; no distributed training or automatic parallelization of arbitrary code. | Must | two jobs on two profiles under one approval |
+| **PR-11** | **Parallel independent jobs** across approved GPUs under one approved plan, recommended only when the estimated gain outweighs setup overhead; a single-GPU sequential campaign is equally supported; no distributed training or automatic parallelization of arbitrary code. | Must | two jobs on two profiles under one approval; one workload where parallel wins and one where sequential does, by total time and cost |
 | **PR-12** | **Few tokens.** Compact structured verdicts and bounded log excerpts; raw evidence on request. | Should | measured token use vs direct workflows |
 | **PR-13** | **Results people can read.** Optional reports and charts made outside the agent's context. | Could | reports cost the agent no tokens |
 | **PR-14** | **Telemetry levels.** Simple · Standard · Deep (opt-in). | Should | quick runs default to Simple or Standard |
@@ -137,7 +147,7 @@ evidence). The list is closed for now: new needs come from design partners, not 
 | **PR-17** | **Minutes to first run.** Read-only discovery; ask only for what is missing. **First run** and **first verified experiment** are measured separately; oracle preparation time is reported, not hidden. | Must | both times measured (targets in section 9) |
 | **PR-18** | **Honest support.** Supported means tested; support matrix with smoke tests; unsupported is explicit. | Must | every listed host/backend has a passing smoke test |
 | **PR-19** | **Integrate, don't replace.** SSH and open export first; Slurm/Kubernetes/MLflow integrations only on demand; interactive work handed to provider sessions. | Could | export works into existing tools |
-| **PR-20** | **Evidence before claims.** Benefits claimed only after a pre-registered comparison with the official Colab skill, direct SSH and SkyPilot wherever it supports the same resource and task (and an autoresearch-style loop where relevant); supported and unsupported cases reported separately; all runs published. | Must | pilot published; decision GO / ITERATE / STOP |
+| **PR-20** | **Evidence before claims.** Benefits claimed only after a pre-registered comparison with the official Colab skill, direct SSH, direct local agent execution and SkyPilot wherever they support the same resource and task (and an autoresearch-style loop where relevant); supported and unsupported cases reported separately; all runs published. | Must | pilot published; decision GO / ITERATE / STOP |
 | **PR-21** | **Compute cost per correct result.** Start-up, idle, failures and billing units included; unknowns disclosed; actual spend where available. | Should | estimate vs actual reported per plan |
 | **PR-22** | **Experiment campaigns.** Objective, baseline, oracle, approved resource envelope, variants, stop conditions, final evidence — a first-class object. The agent reasons; the core records and enforces. | Must | a campaign ends with a best verified result and its evidence |
 | **PR-23** | **Experiment memory.** Per project: structured hypothesis identities, variant lineage, workload and hardware context, results, rejection reasons, evidence; likely duplicates surfaced as **suggestions, not bans** (justified retests and new combinations allowed); measured facts kept apart from agent interpretations. | Must | a new session finds a rephrased prior hypothesis and its evidence; a changed GPU or input allows an explicit retest |
@@ -180,7 +190,8 @@ evidence**: each objection is *unvalidated* until its behavioural check passes w
 | 23 | Claude can just write a script for me. | PR-06, PR-10, PR-05, PR-22 | fewer debugging interventions than an ad hoc script | unvalidated |
 | 24 | There is no convincing advantage. | PR-20 | pilot ends in GO | unvalidated |
 | 25 | Setup costs more than the benefit. | PR-17, PR-26 | break-even reported from partner data | unvalidated |
-| 26 | SkyPilot already gives agents GPUs everywhere. | PR-22, PR-23, PR-20 | a better verified result at the same budget than SkyPilot where both support the resource | unvalidated |
+| 26 | SkyPilot already gives agents GPUs everywhere. | PR-22, PR-23, PR-20 | a better verified result at the same budget than SkyPilot where both support the resource, or the same result with less effort, time or cost | unvalidated |
+| 27 | My agent already runs CUDA on my local GPU. | PR-05, PR-22, PR-23, PR-20 | beats direct local execution on verified outcome, or matches it with less effort, time or cost | unvalidated |
 
 ## 8. Differentiators to prove
 
@@ -202,20 +213,31 @@ the pilot, and targets are recalibrated with pilot data.
 
 | Metric | Starting target | Definition notes |
 |---|---|---|
-| **Best verified improvement at a fixed budget and time** (**primary**) | better than every matched baseline | same task, oracle, budget and wall-time cap in every arm; a campaign with no improvement reports zero |
+| **Verified research outcome at a fixed budget and time** (**primary**) | one of two pre-registered routes (below) | best verified improvement; same task, model, oracle, budget and wall-time cap in every arm; a campaign with no improvement reports zero |
 | Verified improvement per dollar and per hour | reported | failed attempts and agent cost included |
 | Correctness | never worse than baselines | constraint, not a trade-off |
 | Manual interventions per campaign | absolute count, ≤ the lowest baseline | pre-registered counting rules (approvals, recoveries); if a baseline is already near zero, this is a constraint, not the goal |
 | First run | ≤ 3 min (warm), cold reported separately | provider waiting time reported separately |
 | First verified experiment | reported, with oracle preparation time | existing tests reused where possible |
 | Agent tokens per campaign | −30% | same model, task and correctness gate |
+| Memory in a fresh session | reported | retrieval accuracy, avoidable repeated work, false duplicate suggestions; context-dependent retests still possible |
+| Parallel vs sequential | reported | total time and cost (setup included), not GPU time only |
 | Steady-state overhead | ≤ 5% vs direct execution | staging and transfer reported separately |
 | Design partners | 5 before stage A is complete | local GPU and/or Colab users of the initial segment |
 | External beta | 20 users | the advertised campaign works on their supported resources |
 | 30-day repeat use | ≥ 40% of activated users | sample size reported |
 
-**Decision:** GO / ITERATE / STOP on the pre-registered primary metric and constraints;
-publishing results alone unlocks nothing.
+**Two routes to GO**, each with margins and measurement rules fixed before the first run:
+
+1. **Better outcome** — a practically meaningful improvement in verified outcome (at least the
+   pre-registered margin) under the same resource envelope; or
+2. **Same outcome, less cost** — verified outcome non-inferior within the pre-registered margin,
+   with a meaningful reduction (at least the pre-registered margin) in manual interventions, elapsed
+   time or total cost.
+
+Correctness never worse, real resource limits and truthful reporting are non-negotiable in both
+routes; the deciding metric is named in advance, not picked after the results. Otherwise ITERATE
+or STOP; publishing results alone unlocks nothing.
 
 ## 10. Reaching users
 

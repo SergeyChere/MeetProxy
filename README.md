@@ -1,6 +1,6 @@
 # MeetProxy
 
-Your AI agent finishes more correct GPU experiments, with less of your time, on the GPUs you already have.
+Better verified GPU experiments. Less babysitting. Same budget. On the GPUs you already have — a target we will measure, not a proven claim.
 
 Today the GPU is Google Colab; other GPUs (rented machines, your own server) are on the
 [roadmap](ROADMAP.md). Formerly *colab-pilot*.
