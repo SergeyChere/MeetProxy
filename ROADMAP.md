@@ -10,15 +10,17 @@ providers; value is proven before the provider list grows.
 flowchart LR
     D["✅ Done<br/>M0–M6<br/>telemetry · skill · history<br/>reports · hardening · tests"]
     Q["🔧 M7<br/>quick fixes<br/>current mailbox"]
-    S0["🧪 Stage 0 · M8<br/>spike: Colab CLI<br/>lifecycle facts"]
-    A["🧱 Stage A · M9<br/>durable contract<br/>local + Colab"]
-    B["🔬 Stage B · M10<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
-    C["🔌 Stage C · M11<br/>SSH + mailbox<br/>as adapter"]
-    DD["📦 Stage D · M12<br/>packaging<br/>Claude Code · Codex"]
-    E["🌍 Stage E · M13<br/>on demand<br/>providers · Colab API · MCP"]
-    PRO["💎 Pro · M14–M15<br/>CUDA profiling"]
-    V1["1.0 · M16"]
-    D --> Q --> S0 --> A --> B --> C --> DD --> E --> PRO --> V1
+    DP["🤝 M8<br/>design partners<br/>(in parallel)"]
+    S0["🧪 Stage 0 · M9<br/>spike: Colab CLI<br/>lifecycle facts"]
+    A["🧱 Stage A · M10<br/>durable contract<br/>local + Colab"]
+    B["🔬 Stage B · M11<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
+    C["🔌 Stage C · M12<br/>SSH + mailbox<br/>as adapter"]
+    DD["📦 Stage D · M13<br/>packaging<br/>Claude Code · Codex"]
+    E["🌍 Stage E · M14<br/>on demand<br/>providers · Colab API · MCP"]
+    PRO["💎 Pro · M15–M16<br/>CUDA profiling"]
+    V1["1.0 · M17"]
+    D --> Q --> S0 --> A --> B
+    Q --> DP -.-> B --> C --> DD --> E --> PRO --> V1
     B -. "only GO unlocks<br/>new backends" .-> C
 
     classDef done fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
@@ -30,6 +32,7 @@ flowchart LR
     class D done
     class Q fix
     class S0,A,C core
+    class DP prove
     class B prove
     class DD rel
     class E,PRO,V1 later
@@ -69,9 +72,20 @@ Small, safe fixes to what users run today, while stage A is designed.
 - [ ] Version tags; the notebook, skill and guide install a pinned version instead of `main`.
 - [ ] Resuming a job after a restart decides by a reliable marker, not by file size.
 
-## Stage 0 — feasibility
+## Stage 0 — demand and feasibility (in parallel)
 
-### ⬜ M8 — spike: Colab CLI lifecycle
+### 🔜 M8 — design partners
+
+*Design: §17, §18 · Requirements: PR-26, PR-20, PR-22.*
+
+- [ ] Recruit 5 people from the initial segment (repeated CUDA experimenters with their own Colab /
+      lab server / local GPU) — CUDA, research and coding-agent communities.
+- [ ] Observe their real GPU workflow; then let them try a small campaign with today's tool.
+- [ ] Record, opt-in: time to first run, manual interventions, objections (PRODUCT §7), whether they
+      repeat it within a week.
+- [ ] Feed findings back into PRODUCT before stage A is complete.
+
+### ⬜ M9 — spike: Colab CLI lifecycle
 
 With an explicit budget cap, fresh names and directories per scenario, and a session inventory
 before and after every acquire and release: sign-in, acquire and idempotency, survival and observe
@@ -85,10 +99,12 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 
 ## Stage A — minimal durable contract, local + Colab
 
-### ⬜ M9 — the contract on the local GPU and on Colab, as thin slices
+### ⬜ M10 — the contract on the local GPU and on Colab, as thin slices
 
-**A1 · local vertical slice** — *Design: §9, §7, §4, §5, §13, §14 · PR-04, PR-06, PR-09, PR-10, PR-07, PR-14, PR-15*
+**A1 · local vertical slice** — *Design: §9, §9.1, §7, §4, §5, §13, §14 · PR-04, PR-06, PR-09, PR-10, PR-07, PR-14, PR-15, PR-27, PR-28*
 - [ ] **Quick Run** first: script + profile, nothing more; Simple and Standard telemetry levels.
+- [ ] Overhead measured: cold start and steady state vs direct execution (target ≤ 5% steady state).
+- [ ] RunSpec requirements block (GPU capability, dependencies, data) validated before transfer.
 - [ ] One local run end to end: `RunSpec` (`runs/<run_id>/spec.json`), attempt directory, minimal
       SQLite journal (logical operations, request generations, per-operation retry policy),
       `git archive` snapshot with manifest, verified artifacts, the four verdicts (execution,
@@ -102,12 +118,17 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 - [ ] Disconnect, observe, reconnect without restart, cancel with identity-bound acknowledgement.
 - [ ] The regression scenarios of DESIGN §18 as fault-injection tests.
 
-**A3 · Benchmark Mode and plans** — *Design: §8, §9, §10, §11 · PR-05, PR-11, PR-21*
+**A3 · Benchmark Mode, plans, campaigns** — *Design: §8, §9, §10.1, §10.2, §10.3, §11 · PR-05, PR-11, PR-21, PR-22, PR-23, PR-25*
 - [ ] Benchmark Mode: measurement schema, synchronized CUDA timing, core-run oracle against declared
       outputs, interleaved repeats, all samples kept, comparison verdicts.
 - [ ] Plans: one approval for a set of independent runs; two runs concurrently on two approved
       profiles (local + Colab, or two Colab sessions); hardware comparison never read as a speed-up.
-- [ ] Cost estimate per correct result, sources named, unknowns disclosed; estimate vs actual.
+- [ ] **Campaigns:** objective, baseline, oracle, resource envelope, rounds, stop conditions; the
+      agent proposes variants, the core records and enforces; best verified result with evidence.
+- [ ] **Experiment memory:** hypotheses, variant lineage, verdicts, rejection reasons; facts apart
+      from agent interpretations; `meet memory search`.
+- [ ] Cost per correct result (compute + agent tokens where reported), sources named, unknowns
+      disclosed; estimate vs actual.
 
 **A4 · profiles and auth** (as needed) — *Design: §15 · PR-01, PR-03, PR-08, PR-17*
 - [ ] `meet add / use / backends`, `--on`, `meet auth` (keychain; plain file opt-in), read-only
@@ -115,9 +136,9 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 
 ## Stage B — proof of value
 
-### ⬜ M10 — pre-registered pilot, then a small beta
+### ⬜ M11 — pre-registered pilot, then a small beta
 
-*Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21.*
+*Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21, PR-22, PR-26.*
 
 - [ ] Before the first run: primary metric (manual interventions per correct result), constraints
       (budget, wall time, correctness), success threshold, forced-disconnect scenario.
@@ -128,14 +149,17 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
       hardware and price differences reported separately; all failures recorded.
 - [ ] Everything published: protocol, every run, raw data, limitations.
 - [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
-- [ ] On GO: a minimal skill package and install path to a small external beta; collect feedback.
+- [ ] The pilot task is a **campaign** (PRODUCT §5), so the comparison measures the promise, not a
+      single job.
+- [ ] On GO: a minimal skill package and install path to a small external beta (target 20 users);
+      measure, opt-in, activation and repeat use at 7 and 30 days.
 
 **Gate:** only **GO** unlocks new backends — publishing the pilot is not enough. Local + Colab must
 also show reliable cancellation and recovery and correct results.
 
 ## Stage C — SSH and the mailbox
 
-### ⬜ M11 — two more adapters on the same contract (only after GO)
+### ⬜ M12 — two more adapters on the same contract (only after GO)
 
 *Design: §12, §16 · Requirements: PR-19, PR-18, PR-02.*
 
@@ -146,7 +170,7 @@ also show reliable cancellation and recovery and correct results.
 
 ## Stage D — packaging and release
 
-### ⬜ M12 — the skill, where it is tested
+### ⬜ M13 — the skill, where it is tested
 
 *Design: §15, §16 · Requirements: PR-01, PR-17, PR-18, PR-16.*
 
@@ -158,9 +182,9 @@ also show reliable cancellation and recovery and correct results.
 
 ## Stage E — on demand
 
-### ⬜ M13 — only when users ask
+### ⬜ M14 — only when users ask
 
-*Design: §12, §19 · Requirements: PR-19, PR-18.*
+*Design: §12, §15, §19 · Requirements: PR-19, PR-18, PR-24, PR-29.*
 
 - RunPod / Vast.ai / Lambda provisioning through their CLIs or APIs.
 - Slurm / Kubernetes / MLflow integrations.
@@ -168,22 +192,24 @@ also show reliable cancellation and recovery and correct results.
 - Hosted MCP server for chat without a shell (own auth, tenancy and billing model, own security
   review).
 - Container isolation on SSH hosts.
+- Resource recommendations among approved profiles.
+- Documented backend contract for third-party backends.
 
 ## Pro
 
-### ⬜ M14 — CUDA profiling (Deep telemetry)
+### ⬜ M15 — CUDA profiling (Deep telemetry)
 
 *Design: §9 · Requirements: PR-14, PR-05.*
 
 Nsight Compute on request: kernel duration, occupancy, L2 hit rate, branch divergence, DRAM
 throughput, IPC — what GPU utilization cannot show. Comparison reports across variants.
 
-### ⬜ M15 — Pro release
+### ⬜ M16 — Pro release
 
 ## 1.0 and after
 
-- ⬜ **M16 — 1.0:** stable CLI and protocol, skill packages, complete documentation.
-- ⬜ **M17** feedback · **M18** subscription · **M19** growth.
+- ⬜ **M17 — 1.0:** stable CLI and protocol, skill packages, complete documentation.
+- ⬜ **M18** feedback · **M19** subscription · **M20** growth.
 
 ## Ideas, not scheduled
 

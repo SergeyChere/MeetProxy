@@ -4,21 +4,24 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.3). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.4). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
 window, per-operation retry policy, history-free snapshots by archive, per-attempt storage, separate
 execution / delivery / correctness / comparison verdicts, a GO / ITERATE / STOP pilot, beta before
 new adapters); v2.3 derives the design from PRODUCT.md and adds Quick Run / Benchmark modes,
-telemetry levels, parallel independent jobs under one plan, and cost estimates. The contract is agreed **before** production code
+telemetry levels, parallel independent jobs under one plan, and cost estimates; v2.4 follows
+PRODUCT rev. 2 (campaigns and experiment memory, agent cost, overhead budget, portable definitions,
+consented adoption metrics). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
 
-**Is:** a small, deterministic core that lets an AI agent run GPU experiments that are
-**correct, measured fairly, recoverable after failures, cheap to observe and remembered** — on the
-GPU the user chose.
+**Is:** a small, deterministic core behind the product promise (PRODUCT §1): *your agent finishes
+more correct GPU experiments, with less of your time, on the GPUs you already have.* It runs
+**experiment campaigns** whose runs are **correct, measured fairly, recoverable after failures,
+cheap to observe and remembered** — on the GPUs the user chose.
 
 **Is not:** a replacement for the official Colab CLI, a universal cloud manager, a scheduler, or a
 set of instructions that the model is trusted to follow. Moving code to a GPU is solved by official
@@ -56,6 +59,14 @@ interventions, correctness, recovery, tokens or wall time — without hurting co
 | PR-19 integrate, don't replace | §12 SSH backend, §14 export |
 | PR-20 evidence before claims | §17 proving value, §18 gates |
 | PR-21 cost per correct result | §11 cost estimates |
+| PR-22 experiment campaigns | §10.2 campaigns |
+| PR-23 experiment memory | §10.3 experiment memory |
+| PR-24 resource recommendations | §15 profiles (recommendations) |
+| PR-25 total cost includes the agent | §11 cost estimates |
+| PR-26 adoption and retention, with consent | §17 proving value (measurement) |
+| PR-27 low overhead | §9.1 overhead budget |
+| PR-28 portable experiment definitions | §7 RunSpec (requirements block) |
+| PR-29 extensible backends | §12 backend contract |
 
 ## 2. Principles
 
@@ -371,6 +382,9 @@ Two objects, because some facts exist only after a machine was obtained.
   without one is marked unpinned.*
 - A **clean workspace** per attempt; a mismatch with a required declared dependency stops the
   attempt before the job starts. Git LFS and submodules: explicit refusal in the MVP.
+- **Requirements block (portable definitions, PR-28):** a RunSpec may declare what it needs — GPU
+  capability (compute capability, memory), dependencies, data. Moving a run to another profile
+  validates these before any transfer and refuses an incompatible destination.
 - **No promise of full reproducibility** beyond what is declared: undeclared dependencies, data and
   compiler flags are recorded where visible, not guaranteed.
 
@@ -422,7 +436,20 @@ Telemetry levels, chosen per run (`# telemetry: simple | standard | deep`):
 
 Nothing is acquired and nothing runs until the user asks (PR-04): there is no resident service.
 
-## 10. Plans and parallel independent jobs
+### 9.1 Overhead budget
+
+*Serves PR-27.*
+
+- **Cold start** (snapshot, transfer, wrapper start) and **steady state** (sampling, journal writes,
+  log streaming) are measured separately against running the same script directly on the same GPU.
+- Target from PRODUCT §9: steady-state overhead ≤ 5%; cold start reported, not hidden.
+- Sampling interval and log streaming are bounded so that a short Quick Run is not dominated by
+  bookkeeping; Simple telemetry adds no sampling at all.
+- Overhead is part of every adapter's contract tests and of the pilot report.
+
+## 10. Plans, campaigns and parallel independent jobs
+
+### 10.1 Plans and parallel jobs
 
 *Serves PR-11, PR-07, PR-03, PR-21.*
 
@@ -441,9 +468,45 @@ Nothing is acquired and nothing runs until the user asks (PR-04): there is no re
 - **Out of scope:** distributed training, collective communication, automatic partitioning of a
   single workload across machines.
 
+### 10.2 Campaigns
+
+*Serves PR-22, PR-05, PR-07.*
+
+A campaign is the product's unit of value (PRODUCT §5): a sequence of plans aimed at one objective.
+
+| Field | Meaning |
+|---|---|
+| objective | metric, unit, direction (e.g. kernel time, lower is better) |
+| baseline | the reference variant (commit + job) |
+| oracle | the correctness check (§8), digest pinned |
+| resource envelope | approved profiles, concurrency, time and budget limits (one approval, §5.2) |
+| stop conditions | target reached, envelope exhausted, N rounds without improvement, user stop |
+| rounds | each round is a plan (§10.1) of independent variants |
+| result | best verified variant, its evidence, and every rejected variant with its reason |
+
+- **The agent reasons, the core records and enforces.** The agent proposes the next variants; the
+  core checks each new plan against the envelope, runs it, applies the oracle and the comparison
+  rules, and stops at a stop condition. The core never generates variants.
+- A campaign can be paused and resumed; its state lives in the run store (§14) and the memory
+  (§10.3), not in the agent's context.
+
+### 10.3 Experiment memory
+
+*Serves PR-23, PR-16.*
+
+- Per project, in the run store: each **hypothesis** (ID, short statement, author: user or agent),
+  its **variants** with lineage (parent variant, commit, diff summary, configuration), the runs that
+  tested them, their verdicts, and the **rejection reason** when rejected.
+- **Facts and interpretations are kept apart:** measured values and verdicts (written by the core)
+  are separate from explanations (written by the agent, labeled as such).
+- **Searchable** by the agent through the CLI (`meet memory search kernel tiling`): compact answers,
+  one line per hypothesis, evidence on request (PR-12).
+- Plain JSON/CSV files, exportable, with configurable retention (PR-16); nothing leaves the machine
+  unless the user syncs it.
+
 ## 11. Cost estimates
 
-*Serves PR-21, PR-07.*
+*Serves PR-21, PR-25, PR-07.*
 
 - An estimate is **per correct result**, not per hour: start-up, staging, the expected number of
   repeats and failed attempts, idle time inside the collection window (§5.3), and the provider's
@@ -453,6 +516,9 @@ Nothing is acquired and nothing runs until the user asks (PR-04): there is no re
   fact.
 - After a plan, the report shows estimate vs actual where the provider exposes actual usage, and
   "estimate only" where it does not.
+- **Agent cost:** where the agent host reports token usage and model, the campaign report adds it
+  next to compute cost (PR-25); where it does not, agent cost is shown as unknown, never estimated
+  silently.
 - A plan's budget is a **requested** limit: MeetProxy enforces time limits and stops starting new
   runs; it does not promise a monetary cap the provider cannot enforce.
 
@@ -478,7 +544,9 @@ it PASS.
 | find session after client loss (by name / label) | – | to be confirmed by the spike | host is known | branch state |
 | idempotent acquire | – | to be confirmed by the spike | – | – |
 
-Adapters pass shared **contract tests** against a fake backend (supported and unsupported
+The backend contract (capabilities, operations, structured errors) is documented so that a new
+backend can be written outside the core (PR-29); it is supported only after it passes the same
+contract tests. Adapters pass shared **contract tests** against a fake backend (supported and unsupported
 operations, connection loss, timeout, duplicate requests, orphan sessions) and a real smoke test per
 backend before they are declared supported.
 
@@ -531,6 +599,9 @@ backend before they are declared supported.
   ask_before_start = true
   ```
 
+- **Recommendations** (later, PR-24): for a run, `meet` may suggest which *approved* profile fits
+  (capability, availability, estimated cost per correct result); a new profile is only ever added
+  with the user's approval.
 - **`meet doctor` is read-only:** bounded timeouts, never waits on a TTY, never creates a GPU session,
   never prints secrets, `--json` for the agent. It reports per backend what works and the one step a
   human must do.
@@ -580,14 +651,20 @@ An exploratory pilot, not a statistical proof — and planned before it is run:
 
 No token, time or reliability savings are claimed before this.
 
+**Adoption measurement (PR-26):** with design partners and the beta, time to first run,
+activation, repeat use at 7 and 30 days and reasons for leaving are collected **opt-in only**: a
+local file the user can inspect, sent only if they choose to share it. No telemetry leaves the
+machine by default.
+
 ## 18. Stages and acceptance gates
 
 | Stage | Done when |
 |---|---|
+| **0. Design partners** (in parallel with everything below) | 5 people from the initial segment (PRODUCT §3) observed in their real workflow and trying a campaign with today's tool; interventions, objections and repeat use recorded (opt-in, §17). |
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
-| **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry. |
+| **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec with requirements block, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry, overhead measured (§9.1). |
 | **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. |
-| **A3. Benchmark Mode and plans** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10); cost estimate vs actual (§11). |
+| **A3. Benchmark Mode, plans, campaigns** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10.1); a campaign with rounds and stop conditions (§10.2) and experiment memory (§10.3); compute and agent cost (§11). |
 | **A4. Profiles and auth** (as needed) | `meet add / use / backends`, `meet auth`; strict-mode broker and provider token framework stay out until needed. |
 | **B. Proof of value** | The pre-registered pilot of section 17 (vs the official Colab skill and direct SSH, including a parallel plan) ends in **GO**; a minimal skill package and install path go to a small external beta; time to first run measured. |
 | **C. SSH + mailbox** | Only after GO: SSH on one Linux host; the mailbox behind the adapter contract, migration versioned separately. |
@@ -605,7 +682,8 @@ than a coverage percentage.
 
 ## 19. Non-goals and open questions
 
-**Non-goals** (as in [PRODUCT.md §10](PRODUCT.md#10-non-goals)): distributed training and tightly
+**Non-goals** (as in [PRODUCT.md §11](PRODUCT.md#11-non-goals)): competing with multi-cloud
+orchestrators on breadth, a general-purpose autonomous research agent, distributed training and tightly
 coupled multi-GPU workloads, automatic parallelization of arbitrary code, a hosted MCP service (until
 proven demand), a central scheduler, universal cloud provisioning, protection against malicious code
 under the same user, a guaranteed monetary cap without provider support, exactly-once execution.

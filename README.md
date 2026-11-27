@@ -1,6 +1,6 @@
 # MeetProxy
 
-Your AI agent runs experiments on your GPU by itself. You press one button.
+Your AI agent finishes more correct GPU experiments, with less of your time, on the GPUs you already have.
 
 Today the GPU is Google Colab; other GPUs (rented machines, your own server) are on the
 [roadmap](ROADMAP.md). Formerly *colab-pilot*.
