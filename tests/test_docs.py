@@ -20,8 +20,9 @@ def test_relative_links_exist(md):
         assert os.path.exists(path), f"{os.path.relpath(md, ROOT)} links to missing {target}"
 
 
-def test_roadmap_is_linked_and_has_milestones():
+def test_roadmap_is_linked_and_milestones_are_consecutive():
     assert "[Roadmap](ROADMAP.md)" in open(os.path.join(ROOT, "README.md")).read()
     road = open(os.path.join(ROOT, "ROADMAP.md")).read()
-    for m in range(0, 21):
-        assert f"M{m} " in road or f"M{m}—" in road or f"**M{m}" in road, f"M{m} missing"
+    found = sorted({int(m) for m in re.findall(r"\bM(\d+)\b", road)})
+    assert found and found == list(range(found[0], found[-1] + 1)), f"gaps in milestones: {found}"
+    assert found[0] == 0

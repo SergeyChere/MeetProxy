@@ -1,271 +1,326 @@
-# MeetProxy design: one skill, any GPU
+# MeetProxy design: reproducible GPU experiments for AI agents
 
-Status: proposal, 27 Nov 2026. Replaces the "Colab only" direction.
+Status: revised proposal, 27 Nov 2026 (v2). Incorporates the external design review of the same
+day. The contract below is agreed **before** production code changes; nothing here describes
+existing code unless it says so.
 
-## 1. What changed
+## 1. What MeetProxy is, and what it is not
 
-People no longer set tools up by hand: they ask their agent. The product is therefore **the
-skill**. A user types `/meetproxy` in Claude Code (or `$meetproxy` in Codex, `@meetproxy` in
-ChatGPT) and says *"run my benchmark on a GPU"* — and nothing else: no notebook to open, no script
-to copy.
+**Is:** a small, deterministic core that lets an AI agent run GPU experiments that are
+**correct, measured fairly, recoverable after failures, cheap to observe and remembered** — on the
+GPU the user chose.
 
-Moving code to a GPU is no longer the hard part. Google now ships an official **Colab CLI**
-(`colab new --gpu T4`, `colab exec`, `colab run`, `colab ssh`, keep-alive, its own agent skill), an
-official **Colab MCP server** (drives a notebook open in the browser) and a **Colab API**
-(beta, allowlist). Rented GPUs and own servers are reachable over SSH. What nobody provides is the
-layer on top: **one way of running GPU experiments that is correct, measured fairly, observed
-cheaply and remembered — on whatever GPU the user has.** That is MeetProxy.
+**Is not:** a replacement for the official Colab CLI, a universal cloud manager, a scheduler, or a
+set of instructions that the model is trusted to follow. Moving code to a GPU is solved by official
+tools (Colab CLI, `ssh`); MeetProxy uses them.
+
+**The product surface is a skill** (`/meetproxy` in Claude Code, `$meetproxy` in Codex). The skill
+explains intent and results; the core enforces everything that matters.
+
+**Value must be proven, not assumed** (section 14): MeetProxy is worth building only if, on a real
+CUDA experiment, it beats the official Colab skill alone on at least one target metric — manual
+interventions, correctness, recovery, tokens or wall time — without hurting correctness.
 
 ## 2. Principles
 
-1. **The skill is the product.** Everything is reachable from `/meetproxy`. The skill installs and
-   configures what it needs; the user only answers a sign-in prompt once per backend.
-2. **Any GPU, one contract.** The same job script, the same `results.csv`, the same one-line GPU
-   verdict, the same history — whether the GPU is Colab, a rented box, a university server or the
-   laptop's own card.
-3. **Use the official tool for each backend, never re-implement it.** Colab CLI for Colab, `ssh`
-   for servers, provider CLIs/APIs for rented GPUs. MeetProxy adds discipline, not transport.
-4. **Few tokens.** The agent reads one line per job (`gpu ok …` / `gpu WARN …`) and one line per run
-   in history. Raw telemetry and charts are for humans.
-5. **The user chooses the GPU, and always sees which one is used.** MeetProxy suggests what it
-   found; it never switches backend on its own. Every job line names the backend and GPU.
-6. **Tokens live in the OS keychain, never in the repo or the chat.** A backend that has its own
-   sign-in (Colab CLI, `ssh` keys) keeps it; for the rest (RunPod, Vast.ai, Lambda, Colab API,
-   GitHub token for the mailbox) MeetProxy stores the token in the system keychain. The agent never
-   sees a token value. Jobs never see any of them.
-7. **No tunnels or open ports of our own.** Where a backend offers SSH (including `colab ssh`), we
-   use it as a client.
+1. **Core enforces, skill explains.** Approvals, limits, backend choice and data transfer are
+   checked by the CLI, whoever calls it. Instructions in `SKILL.md` are not a security boundary.
+2. **User policy dominates project wishes.** A committed project file can ask for a GPU; it can
+   never raise a limit, approve spending or send code to a new host.
+3. **The user chooses the backend and always sees it.** No silent fallback.
+4. **Every external action is journaled before it happens.** An unclear outcome becomes `UNKNOWN`
+   and is reconciled; it is never blindly retried.
+5. **Honest isolation.** Jobs are trusted code running as the same user unless a real boundary
+   (container, separate user) is configured. We do not claim more.
+6. **Reproducible by construction.** A run is an immutable `RunSpec`: exact source, job digest,
+   environment fingerprint.
+7. **A speed-up is a claim that needs evidence.** Correctness first; comparisons only between
+   compatible environments; "not enough data" is a valid verdict.
+8. **Official tools for transport, contract tests for adapters.** Same contract, explicitly
+   different capabilities.
+9. **Few tokens.** The agent gets one verdict line per run; details only on request.
+10. **MVP scope:** Linux + NVIDIA + Python ≥ 3.8 on the GPU side; local Claude Code and Codex on the
+    agent side.
 
-## 3. Architecture
+## 3. Components
 
 ```mermaid
 flowchart TB
-    U["👤 User<br/>/meetproxy run my benchmark on a GPU"]
-
-    subgraph HOSTS["🤖 Agents"]
+    SK["📘 Skill<br/>intent · workflow · explains results<br/><i>not a security boundary</i>"]
+    subgraph CORE["⚙️ Core CLI (meet)"]
         direction LR
-        CC["Claude Code<br/>Claude Desktop"]
-        CX["Codex CLI / IDE<br/>ChatGPT desktop"]
-        WEB["Cloud sandboxes<br/>Claude Code web, Codex cloud"]
+        RS["RunSpec<br/>BenchmarkSpec"]
+        PG["Policy gate<br/>approvals · limits"]
+        JR["Run journal<br/>states · reconcile"]
+        CMP["Validate · compare<br/>history · reports"]
     end
+    AD["🔌 Backend adapter<br/>capabilities · acquire/attach · stage<br/>start · observe · cancel · collect · release"]
+    WR["📦 Remote wrapper (versioned zipapp)<br/>deadline · process cleanup · minimal env<br/>telemetry · manifest + events"]
+    ST["🗄️ Local run store<br/>immutable manifests + artifacts<br/>delivery & cleanup state · optional git sync"]
 
-    SK["📘 Skill meetproxy<br/>SKILL.md · scripts/ · references/<br/>one folder for every agent"]
+    SK --> CORE --> AD --> WR
+    AD --> ST
+    CORE --> ST
 
-    subgraph CORE["⚙️ meet — the core (local CLI)"]
-        direction LR
-        DOC["meet doctor<br/>finds a backend"]
-        JOB["job contract<br/>headers · results.csv"]
-        OBS["telemetry · flags<br/>history · reports"]
-    end
-
-    subgraph BACK["🔌 Backends (drivers)"]
-        direction LR
-        LOC["local<br/>this machine's GPU"]
-        COL["colab-cli<br/>official Colab CLI"]
-        SSH["ssh<br/>any Linux GPU<br/>RunPod · Vast · Lambda<br/>own / uni server"]
-        API["colab-api<br/>(allowlist)"]
-        MB["git-mailbox<br/>when only GitHub<br/>is reachable"]
-    end
-
-    W["📦 meet-wrap.py on the GPU<br/>process group · timeout · secrets masked<br/>GPU sampling · .done"]
-
-    U --> HOSTS --> SK --> CORE --> BACK --> W
-
-    classDef user fill:#fff6e3,stroke:#e0a020,stroke-width:2px,color:#4a3510
-    classDef agent fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
     classDef skill fill:#f4f0ff,stroke:#7a5af0,stroke-width:2px,color:#2a2244
-    classDef core fill:#f6f4ef,stroke:#9a948a,stroke-width:2px,color:#2b2925
+    classDef core fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
     classDef gpu fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
-    class U user
-    class CC,CX,WEB agent
+    classDef store fill:#fff6e3,stroke:#e0a020,stroke-width:2px,color:#4a3510
     class SK skill
-    class DOC,JOB,OBS core
-    class LOC,COL,SSH,API,MB,W gpu
+    class RS,PG,JR,CMP core
+    class AD,WR gpu
+    class ST store
 ```
 
-### 3.1 The skill
-
-One folder, valid for Claude (`.claude/skills/`, Claude plugins) and for Codex / ChatGPT
-(`.agents/skills/`, `agents/openai.yaml`, OpenAI plugin directory) — both follow the open agent
-skills standard (`SKILL.md` with `name` and `description`, plus `scripts/`, `references/`).
-
-```
-meetproxy/
-  SKILL.md                 short: the workflow, the rules, when to read which reference
-  scripts/bootstrap.sh     installs `meet` (pinned version) if missing, runs `meet doctor`
-  references/
-    backends.md            how each backend is set up and what to tell the user
-    measuring.md           fair measurement: warm-up, repeats, correctness, same GPU
-    reading-results.md     what each flag means and what to check next
-  templates/job.sh         job with headers and results.csv
-  agents/openai.yaml       Codex / ChatGPT metadata
-```
-
-`SKILL.md` stays short (progressive disclosure: hosts load names and descriptions first, the full
-file only when the skill is used). Backend details live in `references/` and are read only when
-needed.
-
-### 3.2 Choosing a backend: the user decides, `meet doctor` helps
-
-**Backends are named profiles** the user sets up once and then picks by name:
-
-```
-meet backends                      # what is configured, what was detected, which is active
-meet add colab                     # profile "colab": official Colab CLI, GPU T4
-meet add lab --ssh me@gpu.uni.edu  # profile "lab": a university server over ssh
-meet add pod --runpod --gpu A100   # profile "pod": RunPod, asks for the API key (keychain)
-meet use lab                       # make "lab" the default for this project
-meet run s01 job.sh --on pod       # one job elsewhere, explicitly
-```
-
-Profiles live in two places, **neither holds a secret**:
-
-| File | Scope | Contains |
-|---|---|---|
-| `~/.config/meetproxy/config.toml` | the user, all projects | profiles: kind, host, default GPU, price policy, *name* of the keychain entry |
-| `.meetproxy/config.toml` | this project (may be committed) | which profile to use, GPU wanted, budget per job |
-
-```toml
-# ~/.config/meetproxy/config.toml
-[profiles.colab]
-kind = "colab-cli"
-gpu = "T4"
-
-[profiles.lab]
-kind = "ssh"
-host = "me@gpu.uni.edu"
-
-[profiles.pod]
-kind = "runpod"
-gpu = "A100"
-credential = "meetproxy/runpod"    # keychain entry name, not the key
-ask_before_start = true            # paid: the agent must ask the user every time
-```
-
-**First use of `/meetproxy`:** no profile yet → the skill runs `meet doctor`, shows the user what is
-possible here ("this machine has no GPU · Colab CLI is installed · no SSH hosts") and **asks which
-to set up**; then creates the profile. It never picks one silently.
-
-**Every later use:** the active profile is used; `meet status` and every job line say it:
-`backend: lab (ssh me@gpu.uni.edu) · gpu: RTX 4090`. If the active profile is down, the agent
-reports it and asks — it does not fall back to another backend by itself.
-
-`meet doctor` diagnoses (it does not choose). It checks, in this order, and reports what each
-needs:
-
-| Order | Backend | Probe | If it fails, the user is told |
-|---|---|---|---|
-| 1 | configured | `.meetproxy/config.toml` | — |
-| 2 | `local` | `nvidia-smi` works here | — |
-| 3 | `colab-cli` | `colab` installed and signed in | "Run `colab auth login` once" (or: "install the Colab CLI?" — the skill can install it) |
-| 4 | `ssh` | hosts in config respond, `nvidia-smi` over ssh | "Add a GPU host: `meet add-host user@host`" |
-| 5 | `colab-api` | API token present | — (allowlist) |
-| 6 | `git-mailbox` | repo has a GitHub origin | "Open this notebook and press Run all" (today's flow) |
-
-Output is one line per backend for the agent and, if needed, one instruction for the human, e.g.
-`colab-cli: ready (T4)` · `ssh lab: unreachable` ·
-`runpod: no API key · ask the user to run: meet auth set runpod`.
-
-### 3.2a Tokens
-
-```
-meet auth set runpod     # hidden prompt in the user's terminal → system keychain
-meet auth list           # entry names and where they are stored, never values
-meet auth rm runpod
-```
-
-- **Storage:** the OS keychain through the `keyring` library — macOS Keychain, Windows Credential
-  Manager, Linux Secret Service. Where none exists (headless Linux, CI), a file
-  `~/.config/meetproxy/credentials` with mode `600`, and `meet auth list` says so. An environment
-  variable (`MEET_TOKEN_RUNPOD=…`) overrides both, for CI.
-- **Never in the chat.** Typing a token into the conversation puts it into the transcript. The skill
-  therefore never asks for a token in chat; it tells the user to run `meet auth set <name>` in their
-  own terminal (in Claude Code: `! meet auth set runpod`), where input is hidden.
-- **Never in the repo:** config files hold only the keychain entry name; `meet` refuses to write a
-  value that looks like a token into a config file.
-- **Read only when used:** a driver loads its token at the moment it calls the provider, passes it
-  to that call only, and masks it in every log. Jobs on the GPU get none of them.
-- **Own sign-ins stay where they are:** Colab CLI (`colab auth login`), `ssh` keys, `gcloud`.
-  MeetProxy only checks that they work.
-
-### 3.3 The core contract (unchanged)
-
-Everything already built stays and becomes backend-independent:
-
-- job = bash script with headers `# timeout:`, `# gpu:`, `# charts:`, `# telemetry:`;
-- `$MEET_OUT/results.csv`, `.done` with exit code, full commit SHA, GPU, seconds, `gpu_stats`;
-- the one-line GPU verdict, `meet history`, `meet report`, `meet export`.
-
-### 3.4 Drivers
-
-Each backend implements the same small interface:
-
-```python
-class Backend:
-    def probe(self) -> Status            # available? which GPUs? what must the human do?
-    def acquire(self, gpu) -> Session    # get a machine with that GPU (may be a no-op)
-    def put(self, session, commit)       # make the exact commit present on the machine
-    def exec(self, session, job) -> Run  # start meet-wrap.py with the job; stream the log
-    def fetch(self, session, run)        # bring out/<job>/ back: .done, results, gpu.csv
-    def release(self, session)           # give the machine back (policy-controlled)
-```
-
-| Driver | acquire | put | exec / fetch | release |
-|---|---|---|---|---|
-| `local` | — | checkout in a worktree | subprocess | — |
-| `colab-cli` | `colab new -s meet --gpu T4` | `colab upload` of a `git bundle` (or `git clone` on the VM) | `colab exec`, `colab download` | `colab stop` (after idle, by policy) |
-| `ssh` | host from config | `git fetch` on the host, or `git bundle` over `scp` | `ssh host meet-wrap.py …`, `scp` back | — |
-| `colab-api` | `create_runtime` | `execute_code` (clone) | `execute_code`, files API | `delete_runtime` |
-| `git-mailbox` | human opens notebook | runner checks out the pushed commit | `cmd/` → `out/` (today's runner) | human / idle exit |
-
-**`meet-wrap.py`** is today's `run_job` extracted into a single file with no dependencies: it is
-copied to the GPU machine with every job and runs the job in its own process group, enforces the
-timeout, masks secrets, samples `nvidia-smi`, writes `.done` and the history line. The same file is
-used by every driver, so measurements are comparable across backends.
-
-### 3.5 Where results live
-
-- Every backend: `.meetproxy/runs/<job>/` locally (log, `.done`, `results.csv`, `gpu.csv`, reports),
-  plus `.meetproxy/history.csv`.
-- Optional `sync: git` (default for `git-mailbox`, off for others): results are also pushed to
-  branch `meetproxy` so history is shared and visible on GitHub.
-
-### 3.6 Which agent environment can use which backend
-
-| Agent runs in | Network | Usable backends |
-|---|---|---|
-| Claude Code / Codex on the user's machine | full | all |
-| Claude Code web, Codex cloud, other cloud sandboxes | usually GitHub and package registries only | `git-mailbox` (this is why it stays) |
-| ChatGPT / Claude chat without a shell | no shell at all | none today; later a hosted MCP server (phase 5) |
-
-## 4. Security
-
-- Tokens for providers without their own sign-in live in the OS keychain (file with mode `600` as
-  a fallback), entered only in the user's terminal, never in chat, config or repo.
-- Colab CLI, `ssh`, `gcloud` keep their own credentials; MeetProxy only checks them.
-- Jobs get no backend credentials; secrets are masked in logs and result files (as in 0.5).
-- Each job runs exactly the requested commit, or does not run (exit -3).
-- `release` never happens implicitly for paid resources unless the user set a policy.
-- The skill tells the agent to ask before acquiring paid GPUs (A100/H100, rented hosts).
-
-## 5. Phases
-
-| Phase | Result |
+| Component | Responsible for |
 |---|---|
-| **1. Core split** | `meet-wrap.py` extracted; driver interface; `local` and `git-mailbox` drivers on it; `.meetproxy/runs/` |
-| **2. Colab CLI, profiles, tokens** | `colab-cli` driver; profiles (`meet add / use / backends`, `--on`); `meet auth` with keychain; `meet doctor`; bootstrap installs pinned `meet` (and offers the Colab CLI) |
-| **3. Skill for every agent** | skill rewritten around `doctor`; `references/`; Claude plugin; Codex/ChatGPT package (`agents/openai.yaml`, OpenAI plugin) |
-| **4. SSH and rented GPUs** | `ssh` driver, `meet add-host`; RunPod / Vast provisioning via their CLIs |
-| **5. Chat without a shell** | hosted MCP server exposing the same contract (needs its own security review) |
-| **6. Colab API** | `colab-api` driver when access is granted |
+| Skill | User intent, the workflow, explaining results. Never trusted to enforce anything. |
+| Core CLI | RunSpec, policy gate, run journal, validation, history, reports, comparison. Owns the history index. |
+| Backend adapter | Declares capabilities; implements the lifecycle operations it supports; structured errors for the rest. |
+| Remote wrapper | Isolation within available limits, wall-clock deadline, process cleanup, telemetry, manifest. |
+| Local run store | Immutable manifests and artifacts, delivery and cleanup state, recovery; optional git sync. |
 
-## 6. Open questions
+No central server, scheduler or queue in the MVP.
 
-- Colab CLI on the agent's machine needs a one-time browser sign-in: can the skill trigger it and
-  wait, or must the user run it? (Test on a real machine.)
-- `put` for Colab CLI: upload a `git bundle` (exact commit, works for private repos without a token
-  on the VM) vs clone on the VM (needs a token there). Bundle is the default proposal.
-- Keep-alive and idle release on Colab CLI: rely on its daemon, plus our `release` policy.
-- Keychain inside cloud sandboxes (Claude Code web, Codex cloud) does not exist: there only the
-  environment-variable override and the git mailbox apply.
-- Naming inside Codex/ChatGPT: `$meetproxy` / `@meetproxy`; the CLI command stays `meet`.
+## 4. Run lifecycle
+
+**Protocol:** `validate → approve → acquire/attach → stage → start → observe → collect → release → compare`
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+    CREATED --> APPROVED: policy gate passes
+    CREATED --> FAILED: rejected
+    APPROVED --> STAGING: session acquired or attached
+    STAGING --> RUNNING: wrapper started
+    STAGING --> FAILED: stage error, e.g. SHA mismatch
+    STAGING --> UNKNOWN: connection lost
+    RUNNING --> SUCCEEDED: manifest collected, exit 0
+    RUNNING --> FAILED: job failed or deadline
+    RUNNING --> CANCELLED: cancel confirmed
+    RUNNING --> UNKNOWN: connection lost
+    UNKNOWN --> SUCCEEDED: reconcile finds result
+    UNKNOWN --> FAILED: reconcile finds failure
+    UNKNOWN --> CANCELLED: reconcile finds it gone
+    SUCCEEDED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+
+    classDef ok fill:#eefaf4,stroke:#1f9d6b,color:#163b2c
+    classDef bad fill:#fdeeee,stroke:#d64545,color:#5a1d1d
+    classDef unk fill:#fff6e3,stroke:#e0a020,color:#4a3510
+    classDef work fill:#eef3fd,stroke:#3b6fd8,color:#1f2a44
+    class SUCCEEDED ok
+    class FAILED,CANCELLED bad
+    class UNKNOWN unk
+    class CREATED,APPROVED,STAGING,RUNNING work
+```
+
+- **Identity first.** `run_id` (unique per submission, also for the same label) and `attempt_id`
+  are written to the journal before any external action.
+- **Intent and outcome.** For every external action (acquire, upload, start, cancel, download,
+  release) the journal records the intent, then the outcome. A crash between the two is detected on
+  the next start.
+- **`UNKNOWN` means reconcile.** `meet reconcile <run>` asks the backend (session list, process
+  status, remote manifest) and moves the run to a terminal state. Nothing is restarted
+  automatically; a new attempt is an explicit user/agent action with a new `attempt_id`.
+- **Three separate states per run:** computation (above), delivery (artifacts fetched and
+  verified), session cleanup (released / kept / borrowed). A failed `release` never hides a result;
+  an interrupted download never marks the run successful.
+- **Cancel** is an operation with its own outcome: `CANCELLED` only when the backend confirms.
+- **Exactly-once is not promised.** At-most-once start per attempt is: an ambiguous start is never
+  retried silently.
+
+## 5. Policy gate and money
+
+Enforced in the core for every call, with or without the skill:
+
+- **Two layers.** User policy `~/.config/meetproxy/policy.toml` (limits, allowed profiles, allowed
+  hosts) dominates project wishes `.meetproxy/config.toml` (GPU wanted, profile preferred). A
+  project file naming a host or profile the user never approved is rejected.
+- **Paid acquisition needs an approval** bound to profile, GPU type, maximum runtime and expiry.
+  Default: deny. In the MVP an approval is given by the human in a terminal
+  (`meet approve pod --gpu A100 --max 2h`), or per profile (`ask_before_start = false` plus
+  `max_hours`).
+- **Outbound data needs consent once per host/profile:** sending the repository snapshot to a new
+  machine is a data transfer.
+- **Owned vs borrowed sessions.** A session MeetProxy created is *owned*: it gets a TTL, a maximum
+  runtime, labels with `run_id`, and is found and released by reconcile after a crash. A session
+  the user created (an existing Colab runtime, their own server) is *borrowed* and is never released
+  or deleted by MeetProxy.
+- **Cost is the session, not the job:** upload, idle time and download count. Unknown price →
+  explicit consent or refusal. No hard money cap is promised where the provider API cannot enforce
+  one; we enforce time limits and report what we know.
+
+## 6. Trust model and credentials
+
+- **Trusted-code mode (default, stated plainly):** a job runs as the same OS user as the wrapper. It
+  could reach anything that user can — files, keyring session, provider sign-ins. MeetProxy reduces
+  accidental exposure; it does not stop deliberate access. `meet doctor` reports the isolation level
+  in effect.
+- **Real boundaries when available:** run jobs in a container or as a separate user where the
+  backend supports it; then the claims grow accordingly.
+- **Minimal job environment:** an allowlist of variables (plus the user's explicit additions), never
+  `SSH_AUTH_SOCK`, provider tokens, `GIT_CONFIG_*`, cloud SDK credentials.
+- **Tokens:** providers without their own sign-in store tokens in the OS keychain (`keyring`).
+  Plain-text file storage is **opt-in only**, with owner and mode checked on every read. Tokens are
+  entered by the human in a terminal (`meet auth set <name>`), never in chat, never in config or the
+  repository. Colab CLI, `ssh`, `gcloud` keep their own credentials; MeetProxy only checks them.
+- **Artifacts are published by allowlist** (default: `results.csv`, manifest, logs, telemetry). A
+  file found to contain a known secret is **withheld, not rewritten** (rewriting can corrupt binary
+  data), and the run says so. Paths are validated: no symlinks or `..` escaping the run directory.
+- **Logs and results are data, never instructions:** nothing read back from a run is executed or
+  treated as a command by the core.
+
+## 7. RunSpec: what a run is
+
+Immutable, written before staging, stored with the run:
+
+| Field | Required |
+|---|---|
+| repository + full commit SHA | yes |
+| job script digest (SHA-256), parameters, seed | yes |
+| wrapper digest and protocol version | yes |
+| backend profile, requested GPU | yes |
+| environment fingerprint after start: GPU model, driver, CUDA, Python | yes (recorded by the wrapper) |
+| dependency lock or image digest | when present |
+| dataset ID / hash | when declared |
+
+- **Clean workspace per attempt:** a fresh worktree of the SHA, never a directory with earlier
+  outputs.
+- **Snapshot transfer:** a minimal `git bundle` of the SHA, verified on arrival; changing the branch
+  after submit does not change the run. Git LFS and submodules: explicit refusal in the MVP (or a
+  declared manifest later), never silently missing.
+- A digest mismatch or a missing declared dependency stops the run before the job starts.
+
+## 8. BenchmarkSpec and verdicts
+
+For comparisons (optional per run, required for "faster/slower" claims):
+
+- baseline and candidate, **correctness oracle** (reference output or check command), warm-up count,
+  repeats, the measured phase, and the device/environment fingerprint;
+- results: median and spread; wall time separated from kernel time where the job reports it;
+- telemetry averages **weighted by time** (samples are irregular);
+- verdicts: `OK`, `WARN`, `UNKNOWN` (no telemetry), `INSUFFICIENT_DATA` (too short, too few
+  repeats). One line for the agent, details on request.
+- A wrong output is rejected even if it is faster. Different hardware fingerprints never produce an
+  automatic speed-up claim.
+
+`nvidia-smi` telemetry stays coarse: it tells whether the GPU was busy, throttled or near OOM, not
+whether a kernel is efficient. Kernel-level profiling (Nsight Compute) is a later, opt-in feature.
+
+## 9. Backends: one contract, declared capabilities
+
+Each adapter publishes a `CapabilitySet`; the core checks a run's requirements against it **before
+acquire** and fails with a structured error (`unsupported: cancel`) otherwise.
+
+| Capability | local | colab-cli | ssh | git-mailbox |
+|---|---|---|---|---|
+| acquire GPU | – (attach) | yes (owned) | – (attach, borrowed) | – (human opens notebook) |
+| arbitrary bash | yes | via the Python wrapper | yes | yes |
+| wall-clock deadline | wrapper | wrapper (CLI timeout is an *idle* limit) | wrapper | wrapper |
+| cancel | yes | yes | yes | `STOP` / per-job cancel |
+| observe after connection loss | journal + pid | session list + remote manifest | remote manifest | branch state |
+| storage between runs | yes | until release | yes | branch |
+| release | – | `colab stop` (owned only) | – | – |
+
+Adapters pass shared **contract tests** against a fake backend (supported and unsupported
+operations, connection loss, timeout, duplicate requests, orphan sessions) and a real smoke test per
+backend before they are declared supported.
+
+## 10. Remote wrapper
+
+- **Built, not hand-written twice:** a versioned zipapp generated from the same modules the core
+  uses (process group, deadline, telemetry, masking). Its digest is part of the RunSpec; a protocol
+  version mismatch stops the run before the job starts.
+- **Writes a manifest and an event stream** (`started`, `heartbeat`, `finished`), never the history
+  index — the core owns history.
+- **Preflight on the GPU machine:** Python version, `nvidia-smi`, disk space, `git`; missing tools are
+  reported before the job, not as a mysterious failure.
+
+## 11. Artifacts and the run store
+
+- `.meetproxy/runs/<run_id>/` with an immutable `manifest.json` (files, sizes, SHA-256), the
+  RunSpec, the journal and the artifacts. `.meetproxy/` is excluded from git.
+- Atomic writes (temp file + rename); idempotent, resumable fetch; a checksum mismatch is a delivery
+  failure, never success.
+- Retention and quota settings; large binaries stay local.
+- **Git sync is opt-in** and limited to an allowlisted set of small artifacts (results, manifest,
+  verdict, reports). The git mailbox keeps its own branch as today.
+
+## 12. Profiles, `doctor`, `auth`, bootstrap
+
+- **Profiles** (`meet add / use / backends`, `--on <profile>`) live in user config; the project
+  file only *prefers* one. First use of the skill: `meet doctor` shows what is possible and the user
+  chooses what to set up.
+
+  ```toml
+  # ~/.config/meetproxy/config.toml — no secrets here
+  [profiles.colab]
+  kind = "colab-cli"
+  gpu = "T4"
+
+  [profiles.lab]
+  kind = "ssh"
+  host = "me@gpu.uni.edu"
+
+  [profiles.pod]
+  kind = "runpod"
+  gpu = "A100"
+  credential = "meetproxy/runpod"   # keychain entry name, not the key
+  ask_before_start = true
+  ```
+
+- **`meet doctor` is read-only:** bounded timeouts, never waits on a TTY, never creates a GPU session,
+  never prints secrets, `--json` for the agent. It reports per backend what works and the one step a
+  human must do.
+- **`meet auth set / list / rm`:** keychain storage as in section 6.
+- **Bootstrap** installs a pinned release (tag + checksum), only with the user's permission; never an
+  unverified branch. Interactive sign-ins (`colab auth login`) are done by the human in a terminal.
+
+## 13. Hosts: what is supported is what is tested
+
+One shared `SKILL.md` plus thin host manifests (Claude: skill folder / plugin; Codex:
+`.agents/skills`, `agents/openai.yaml`). A support matrix lists host and version, shell and network,
+install, auth and cancellation, each backed by a smoke test.
+
+| Host | Status |
+|---|---|
+| Claude Code (local) | first target |
+| Codex CLI / IDE (local) | first target |
+| Cloud sandboxes (Claude Code web, Codex cloud) | git-mailbox only; after the first two |
+| Chat without a shell (ChatGPT, Claude chat) | not supported; a hosted MCP server needs its own auth, tenancy and billing model and is considered only on proven demand |
+
+## 14. Proving value
+
+Before any new provider:
+
+1. Pick one real CUDA experiment (ColorSplit / queens-rect kernel variants).
+2. Run it twice with the same budget on the same GPU type: **official Colab skill alone** vs
+   **MeetProxy**.
+3. Measure: manual interventions, correctness of the chosen variant, recovery from a forced
+   disconnect, wall time, cost, tokens.
+4. Publish the protocol, raw data and result. No token or time savings are claimed before this.
+
+## 15. Stages and acceptance gates
+
+| Stage | Done when |
+|---|---|
+| **A. Core + local** | Immutable RunSpec, policy gate, durable lifecycle with `UNKNOWN`/reconcile, correctness oracle and baseline, contract tests; the local backend passes them. |
+| **B. Colab CLI** | One real T4/L4: approval, bundle staging, reconnect, cancel, cleanup of owned sessions; the value experiment of section 14 published. |
+| **C. SSH + mailbox** | SSH on one Linux host; the git mailbox moved behind the adapter contract with migration tests. |
+| **D. Packaging** | Claude Code and Codex packages, pinned releases, support matrix, quick start; real user feedback. |
+| **E. On demand** | RunPod / Vast / Lambda provisioning, Colab API, hosted MCP, multi-GPU. |
+
+**Gate:** no new provider until local + Colab show reliable cancellation and recovery, correct
+results and an observable advantage over the official workflow.
+
+## 16. Open questions
+
+- Can the skill start the Colab CLI sign-in and wait, or must the user run it? (Test on a real
+  machine.)
+- Wrapper on Colab via `colab exec` (Python) vs `colab ssh`: which gives reliable cancel and
+  reconnect?
+- Approval UX in Claude Code / Codex: a terminal command the human runs (`! meet approve …`) is the
+  MVP; is there a better host-native confirmation?
+- Container isolation on SSH hosts: Docker/Podman when present, or out of MVP scope?

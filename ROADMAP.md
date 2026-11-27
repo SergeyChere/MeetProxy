@@ -1,31 +1,36 @@
 # Roadmap
 
-What is done, what comes next, and why in that order. Reliability and security come before new
-features; a public release comes after hardening and a real case is shown.
+What is done, what comes next, and why in that order. Direction and contract:
+[docs/DESIGN.md](docs/DESIGN.md) — reproducible GPU experiments for AI agents, one skill, the GPU the
+user chooses. Safety, lifecycle and measurement come before new providers; value is proven before
+the provider list grows.
 
 ```mermaid
 flowchart LR
-    D["✅ Done<br/>M0–M5<br/>telemetry · skill · docs<br/>history · reports · export<br/>tests + CI"]
-    F["🛡️ Harden<br/>M6–M8<br/>hardening · reliability<br/>job lifecycle"]
-    P["🔬 Prove it<br/>M9–M10<br/>real GPU check<br/>real demo case"]
-    A["🧩 Skill first, any GPU<br/>M11–M13<br/>core split · Colab CLI<br/>one skill · release"]
-    R["🌍 More GPUs<br/>M14–M16<br/>SSH · rented · chat MCP<br/>Colab API"]
-    PRO["💎 Pro<br/>M17–M19<br/>measurement method<br/>CUDA profiling"]
-    V1["1.0<br/>M20"]
-    D --> F --> P --> A --> R --> PRO --> V1
+    D["✅ Done<br/>M0–M6<br/>telemetry · skill · history<br/>reports · hardening · tests"]
+    Q["🔧 M7<br/>quick fixes<br/>current mailbox"]
+    A["🧱 Stage A · M8<br/>core + local<br/>RunSpec · policy · lifecycle"]
+    B["🔬 Stage B · M9<br/>Colab CLI<br/>+ proof of value"]
+    C["🔌 Stage C · M10<br/>SSH + mailbox<br/>as adapter"]
+    DD["📦 Stage D · M11<br/>packaging<br/>Claude Code · Codex"]
+    E["🌍 Stage E · M12<br/>on demand<br/>providers · Colab API · MCP"]
+    PRO["💎 Pro · M13–M14<br/>CUDA profiling"]
+    V1["1.0 · M15"]
+    D --> Q --> A --> B --> C --> DD --> E --> PRO --> V1
+    B -. "gate: no new provider<br/>before this is proven" .-> E
 
     classDef done fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
     classDef fix fill:#fdeeee,stroke:#d64545,stroke-width:2px,color:#5a1d1d
+    classDef core fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
     classDef prove fill:#fff6e3,stroke:#e0a020,stroke-width:2px,color:#4a3510
-    classDef auto fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
     classDef rel fill:#f4f0ff,stroke:#7a5af0,stroke-width:2px,color:#2a2244
     classDef later fill:#f6f4ef,stroke:#9a948a,stroke-width:2px,color:#2b2925
     class D done
-    class F fix
-    class P prove
-    class A auto
-    class R rel
-    class PRO,V1 later
+    class Q fix
+    class A,C core
+    class B prove
+    class DD rel
+    class E,PRO,V1 later
 ```
 
 Legend: ✅ done · 🔜 next · ⬜ planned.
@@ -44,115 +49,101 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 | ✅ | **Rename to MeetProxy** | command `meet`, package `meetproxy`, mailbox branch `meetproxy`: the name no longer ties the project to Colab |
 | ✅ | **Tests and CI** | unit, CLI and end-to-end suite, 99% coverage, CI on every push |
 
-## Fix first
+## Next
 
-### ✅ M6 — 0.5: hardening
+### 🔜 M7 — quick fixes to the current mailbox flow
 
-- [x] Hardening of credentials handling and job isolation.
-- [x] Stricter guarantees that each job runs exactly the pushed commit.
-- [x] More robust result delivery.
-- [x] A documented trust model ([README](README.md#trust-and-security)).
+Small, safe fixes to what users run today, while stage A is designed.
 
-### 🔜 M7 — 0.5.1: quick reliability fixes
-
-- [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of crashing the runner.
+- [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of stopping the runner.
 - [ ] Timeouts on every git command: a hung network cannot freeze the runner.
-- [ ] `meet status` / `meet wait` notice a stuck `running` (heartbeat older than ~3 min during a job).
+- [ ] `meet status` / `meet wait` notice a stuck `running` (no heartbeat for ~3 min during a job).
 - [ ] A job's timeout never exceeds what is left of `MAX_HOURS`.
+- [ ] A result file that contains a known secret is withheld and reported, not rewritten.
 - [ ] Version tags; the notebook, skill and guide install a pinned version instead of `main`.
 - [ ] Resuming a job after a restart decides by a reliable marker, not by file size.
 
-### ⬜ M8 — 0.6: job lifecycle
+## Stage A — core + local
 
-- [ ] `meet cancel <job>` — cancel one job without stopping the runner.
-- [ ] `meet retry <job>` — rerun under a new name.
-- [ ] Job claiming: two runners can never run the same job.
-- [ ] Logs do not bloat git history (rotation or moving old logs out).
+### ⬜ M8 — the contract, on the agent's own GPU
 
-## Prove it
+- [ ] `RunSpec`: full SHA, job digest, parameters and seed, wrapper digest, environment
+      fingerprint; clean worktree per attempt.
+- [ ] Policy gate in the CLI: user policy over project wishes; paid acquisition and outbound data
+      need explicit approval; default deny. Tests call the CLI directly, without the skill.
+- [ ] Durable lifecycle: `run_id` / `attempt_id` before side effects, journal of intents and
+      outcomes, states `CREATED … SUCCEEDED / FAILED / CANCELLED / UNKNOWN`, `meet reconcile`,
+      cancel with confirmation; separate delivery and cleanup state.
+- [ ] `BenchmarkSpec`: baseline vs candidate, correctness oracle, warm-up, repeats, median and
+      spread; verdicts `OK / WARN / UNKNOWN / INSUFFICIENT_DATA`; time-weighted telemetry.
+- [ ] Remote wrapper as a versioned zipapp from the core's modules; preflight; minimal job env.
+- [ ] Run store: `.meetproxy/runs/<run_id>/`, manifest with SHA-256, atomic writes, resumable fetch.
+- [ ] Backend contract with `CapabilitySet`, structured errors, contract tests on a fake backend;
+      the `local` backend passes them.
+- [ ] Profiles (`meet add / use / backends`, `--on`), `meet auth` (keychain; plain file opt-in),
+      read-only `meet doctor --json`.
 
-### ⬜ M9 — Check on a real Colab GPU
+## Stage B — Colab, and proof of value
 
-Everything above on a real T4 / L4: `nvidia-smi` field names, charts, history, resume.
+### ⬜ M9 — Colab through the official Colab CLI
 
-### ⬜ M10 — A real demo case
+- [ ] `colab-cli` adapter: owned sessions with TTL and labels, `git bundle` staging with SHA check,
+      own wall-clock deadline, reconnect, cancel, cleanup after a crash.
+- [ ] Everything on a real T4 / L4.
+- [ ] **Value experiment** (DESIGN §14): one real CUDA case (ColorSplit / queens-rect variants), the
+      official Colab skill alone vs MeetProxy, same budget; manual steps, correctness, recovery,
+      time, cost, tokens. Protocol, data and result published.
 
-An agent tries ~10 variants of a CUDA kernel (ColorSplit / queens-rect): checks correctness,
-measures, drops the slow and wrong ones, keeps the best. Its real `report.md` and `history.md`
-replace the made-up example in the README.
+**Gate:** no new provider until this stage shows reliable cancellation and recovery, correct
+results and an observable advantage over the official workflow.
 
-## Skill first, any GPU
+## Stage C — SSH and the mailbox
 
-Direction from 27 Nov 2026: the product is the skill (`/meetproxy`), and it works on whatever GPU
-the user has. Design: [docs/DESIGN.md](docs/DESIGN.md).
+### ⬜ M10 — two more adapters on the same contract
 
-### ⬜ M11 — Core split
+- [ ] `ssh` adapter on one Linux host (borrowed sessions, never released by us).
+- [ ] The git mailbox behind the adapter contract (for sandboxes that reach only GitHub), with
+      migration tests from today's flow; per-job cancel, job claiming, logs that do not bloat
+      history.
 
-- [ ] `meet-wrap.py`: the job runner as one dependency-free file that runs on any GPU machine
-      (process group, timeout, secret masking, GPU sampling, `.done`).
-- [ ] Driver interface (`probe / acquire / put / exec / fetch / release`).
-- [ ] `local` driver (the agent's own GPU) and today's flow as the `git-mailbox` driver.
-- [ ] Results in `.meetproxy/runs/<job>/` for every backend; optional git sync.
+## Stage D — packaging and release
 
-### ⬜ M12 — Colab CLI, backend profiles, tokens
+### ⬜ M11 — the skill, where it is tested
 
-- [ ] Profiles: `meet add`, `meet use`, `meet backends`, `--on <profile>`; the user chooses, every
-      job line names the backend; no silent fallback.
-- [ ] `meet auth set / list / rm`: tokens in the OS keychain (file with mode 600 as fallback, env
-      override for CI); never in chat, config or repo.
-- [ ] `colab-cli` driver: `colab new / upload / exec / download / stop`.
-- [ ] Exact commit on the VM via `git bundle`.
-- [ ] `meet doctor`: shows what is available here and the one step each backend still needs.
-- [ ] Release policy (idle minutes), never implicit for paid GPUs.
+- [ ] One `SKILL.md` plus thin manifests: Claude Code (skill / plugin), Codex
+      (`.agents/skills`, `agents/openai.yaml`).
+- [ ] Pinned releases with checksums; bootstrap installs only with permission.
+- [ ] Support matrix with a smoke test per listed host; untested hosts marked as such.
+- [ ] Quick start; publish the free skill; collect real feedback.
 
-### ⬜ M13 — One skill for every agent, and release
+## Stage E — on demand
 
-- [ ] Skill rewritten around `meet doctor`; details in `references/`.
-- [ ] `scripts/bootstrap.sh` installs a pinned `meet`.
-- [ ] Packages: Claude (skills / plugin), Codex and ChatGPT (`.agents/skills`,
-      `agents/openai.yaml`, plugin).
-- [ ] Publish the free skill on skill marketplaces.
+### ⬜ M12 — only when users ask
 
-### ⬜ M14 — SSH and rented GPUs
-
-- [ ] `ssh` driver and `meet add-host`: any Linux machine with an NVIDIA GPU (own, university,
-      RunPod, Vast.ai, Lambda), also `colab ssh`.
-- [ ] Provisioning through provider CLIs where they exist; ask before paid GPUs.
-- [ ] Several GPUs: one queue, a telemetry summary per GPU.
-
-### ⬜ M15 — Chat without a shell
-
-A hosted MCP server with the same contract, for ChatGPT / Claude chat that has no terminal. Needs
-its own security review before it exists.
-
-### ⬜ M16 — Colab API
-
-`colab-api` driver (`create_runtime`, `execute_code`, `delete_runtime`) when access is granted.
+- RunPod / Vast.ai / Lambda provisioning through their CLIs or APIs.
+- Colab API adapter, when access is granted.
+- Hosted MCP server for chat without a shell (own auth, tenancy and billing model, own security
+  review).
+- Several GPUs per run; container isolation on SSH hosts.
 
 ## Pro
 
-### ⬜ M17 — Measurement method
-
-Correctness against a reference, warm-up and repeated runs with median and spread, A/B comparison
-of variants. Telemetry: time-weighted averages, and "no data" instead of "fine" when a metric is
-missing.
-
-### ⬜ M18 — 0.8: CUDA profiling
+### ⬜ M13 — CUDA profiling
 
 Nsight Compute on request: kernel duration, occupancy, L2 hit rate, branch divergence, DRAM
 throughput, IPC — what GPU utilization cannot show. Comparison reports across variants.
 
-### ⬜ M19 — Pro release
+### ⬜ M14 — Pro release
 
 ## 1.0 and after
 
-- ⬜ **M20 — 1.0:** stable CLI, skill, an MCP server, complete documentation.
-- ⬜ **M21** feedback · **M22** subscription · **M23** growth.
+- ⬜ **M15 — 1.0:** stable CLI and protocol, skill packages, complete documentation.
+- ⬜ **M16** feedback · **M17** subscription · **M18** growth.
 
 ## Ideas, not scheduled
 
-- `meet bench`: repeat a job N times, report median and spread.
-- Artifacts too large for git: optional upload to a GCS / Hugging Face bucket, link in `.done`.
+- Artifacts too large for git or the local store: optional upload to a GCS / Hugging Face bucket,
+  link in the manifest.
 
 ---
 
