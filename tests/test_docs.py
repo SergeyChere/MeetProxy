@@ -60,7 +60,7 @@ def test_design_section_references_exist():
     design = _read("docs", "DESIGN.md")
     secs = _sections(design)
     for doc in (("docs", "DESIGN.md"), ("ROADMAP.md",), ("docs", "spikes", "colab-cli.md")):
-        text = _read(*doc)
+        text = re.sub(r"PRODUCT §\d+(?:\.\d+)?", "", _read(*doc))   # references into PRODUCT
         refs = set(re.findall(r"§(\d+(?:\.\d+)?)", text))
         if doc != ("docs", "DESIGN.md"):
             refs = set(re.findall(r"(?:DESIGN |Design: [^·\n]*?)§(\d+(?:\.\d+)?)", text)) | \
@@ -75,9 +75,14 @@ def test_every_skill_section_named_in_product_exists():
     product, skill = _read("docs", "PRODUCT.md"), _read("skill", "meetproxy", "SKILL.md")
     table = product[product.index("### 1.2 What the skill contains"):product.index("## 2. ")]
     names = re.findall(r"^\| `([^`]+)`", table, re.M)
-    assert names, "PRODUCT §1.2 lists no skill sections"
+    sections = [n for n in names if "/" not in n]
+    refs = [n for n in names if "/" in n]
+    assert sections and refs, "PRODUCT §1.2 lists no skill sections or references"
     headings = re.findall(r"^## \d+\. (.+)$", skill, re.M)
-    assert names == headings, f"PRODUCT §1.2 {names} != SKILL.md sections {headings}"
+    assert sections == headings, f"PRODUCT §1.2 {sections} != SKILL.md sections {headings}"
+    for r in refs:
+        assert os.path.exists(os.path.join(ROOT, "skill", "meetproxy", r)), r
+        assert r in skill, f"SKILL.md never points to {r}"
     for pr in set(re.findall(r"\bPR-\d+\b", table)):
         assert re.search(rf"^\| \*\*{pr}\*\* \|", product, re.M), pr
 
@@ -88,3 +93,39 @@ def test_documents_point_to_each_other():
     assert "(../skill/meetproxy/SKILL.md)" in product
     assert "Derived from [PRODUCT.md]" in design and "ROADMAP" in design
     assert "docs/PRODUCT.md" in road and "docs/DESIGN.md" in road
+
+
+# ---- the skill loads progressively (PRODUCT §1.2) ----
+
+def test_entry_skill_does_not_carry_a_route():
+    skill = _read("skill", "meetproxy", "SKILL.md")
+    for word in ("setup.sh", "meet ", "pip install", "GH_TOKEN", "colab_runner.ipynb", "$MEET_OUT"):
+        assert word not in skill, f"route detail {word!r} belongs in a reference, not SKILL.md"
+    assert len(skill.split()) < 1200, "the entry skill must stay short"
+
+
+def test_mailbox_setup_is_only_in_the_mailbox_reference():
+    ref = os.path.join(ROOT, "skill", "meetproxy", "reference")
+    for f in os.listdir(ref):
+        if f not in ("mailbox.md", "troubleshooting.md"):
+            assert "setup.sh" not in open(os.path.join(ref, f)).read(), f
+    assert "setup.sh" in open(os.path.join(ref, "mailbox.md")).read()
+
+
+def test_every_route_says_what_exists_today():
+    product = _read("docs", "PRODUCT.md")
+    table = product[product.index("### 1.4 What exists today"):product.index("## 2. ")]
+    skill = _read("skill", "meetproxy", "SKILL.md")
+    assert "working and tested" in table and "instructions only" in table and "not shipped" in table
+    assert skill.count("instructions only") >= 2 and "working, tested" in skill
+
+
+def test_readme_leads_with_the_skill_and_truthful_routes():
+    readme = _read("README.md")
+    routes = readme.index("## What works today")
+    assert routes < readme.index("## Install the skill") < readme.index("## Local GPU")
+    assert readme.index("## Local GPU") < readme.index("## Colab via the mailbox")
+    table = readme[routes:readme.index("## Install the skill")]
+    assert table.count("instructions only") == 2 and "working and tested" in table
+    local = readme[readme.index("## Local GPU"):readme.index("## Colab via the mailbox")]
+    assert "GH_TOKEN" not in local and "notebook" in local.lower()  # says no notebook needed

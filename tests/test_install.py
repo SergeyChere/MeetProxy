@@ -20,7 +20,7 @@ def test_meet_version_flag():
     assert r.stdout.strip() == f"meet {version()}"
 
 
-@pytest.mark.parametrize("f", ["skill/meetproxy/scripts/setup.sh", "skill/meetproxy/SKILL.md",
+@pytest.mark.parametrize("f", ["skill/meetproxy/scripts/setup.sh", "skill/meetproxy/SKILL.md", "skill/meetproxy/reference/mailbox.md",
                                "meetproxy/guide.md", "README.md",
                                "skill/meetproxy/reference/troubleshooting.md"])
 def test_no_install_overrides_system_package_protection(f):

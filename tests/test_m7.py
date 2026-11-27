@@ -197,7 +197,7 @@ def version():
 
 
 INSTALL_FILES = ["colab_runner.ipynb", "README.md", "meetproxy/guide.md", "meetproxy/runner.py",
-                 "skill/meetproxy/SKILL.md", "skill/meetproxy/scripts/setup.sh"]
+                 "skill/meetproxy/reference/mailbox.md", "skill/meetproxy/scripts/setup.sh"]
 
 
 @pytest.mark.parametrize("f", INSTALL_FILES)

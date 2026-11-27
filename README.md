@@ -2,18 +2,50 @@
 
 Better verified GPU experiments. Less babysitting. Same budget. On the GPUs you already have — a target we will measure, not a proven claim.
 
-Today the GPU is Google Colab; other GPUs (rented machines, your own server) are on the
-[roadmap](ROADMAP.md). Formerly *colab-pilot*.
+**MeetProxy is one skill** for your coding agent (Claude Code, Codex, any agent that reads
+`SKILL.md`): it runs a disciplined experiment campaign — baseline, correctness check, variants,
+matched comparison — on a GPU you already have and brings back the best **verified** variant with
+its evidence. It is not a platform: no service, database or daemon. Formerly *colab-pilot*.
 
 [![How MeetProxy works](docs/how-it-works.svg)](docs/HOW-IT-WORKS.md)
 
-## You need
+## What works today
 
-- a GitHub repository with your code;
-- Google Colab with compute units (paid);
-- Claude Code (or another coding agent) working in that repository.
+| Route | Status | You need |
+|---|---|---|
+| **Your local NVIDIA card** | instructions only — the skill guides the agent, no MeetProxy helper checks the runs yet | the skill, a CUDA project |
+| **Colab via the official Colab CLI / skill** | instructions only, not yet tried | the skill, the official Colab tool signed in |
+| **Colab via the MeetProxy mailbox** | **working and tested** | the skill, a GitHub repo, paid Colab (below) |
 
-## Start
+The agent uses only the GPU **and** the route you approve, tells you which routes are unavailable,
+and never switches to another one on its own. Plans: [roadmap](ROADMAP.md).
+
+## Install the skill
+
+Copy the folder [`skill/meetproxy`](skill/meetproxy) of this repository into your agent's skills
+directory — Claude Code: `<project>/.claude/skills/meetproxy/` or `~/.claude/skills/meetproxy/`.
+`bash scripts/build_skill.sh` makes the same folder as a zip. Nothing else is installed until a route
+needs it and you agree.
+
+## Local GPU: first campaign
+
+No GitHub, token or notebook. In your project, tell the agent:
+
+> Find a faster correct version of `<kernel>` on my GPU. Use `<test command>` as the correctness
+> check, 3 variants, at most 30 minutes.
+
+It states the campaign and asks you once, runs each variant with a deadline, rejects incorrect ones,
+and reports the best verified variant against the baseline, with its records in
+`meet-runs/<campaign>/`. This route is **instructions only** today: the agent follows the skill's
+rules; no helper enforces them yet.
+
+## Colab via the mailbox (fallback route)
+
+The one route that works and is tested today. Your code and jobs go through a branch of your
+GitHub repository; a notebook on Colab runs them.
+
+**You need:** a GitHub repository with your code; Google Colab with compute units (paid); a coding
+agent working in that repository.
 
 **1. Colab:** click [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyChere/MeetProxy/blob/main/colab_runner.ipynb), then:
 
@@ -38,9 +70,13 @@ meetproxy.runner.colab_start(REPO)
 
 **2. Claude:** say
 
-> Use https://github.com/SergeyChere/MeetProxy to run our benchmarks on my Colab GPU.
+> Run our benchmarks on my Colab GPU through the MeetProxy mailbox.
 
-Done. To stop: ■ in Colab. Shut the runtime down yourself when finished.
+(Without the skill installed: *"Use https://github.com/SergeyChere/MeetProxy to run our benchmarks
+on my Colab GPU through its mailbox."*)
+
+Done. To stop: ■ in Colab. The runtime is yours: **shut it down yourself when finished** — the agent
+only stops the runner.
 
 ## Logs, GPU metrics and reports
 

@@ -4,7 +4,7 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.8). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.9). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
@@ -21,7 +21,10 @@ direct local execution as a pilot arm, a fresh-session memory test); v2.7 change
 investment, not the requirements: a thin skill is tested first and stage-A components are built only
 for failures it cannot solve (§18); v2.8 follows PRODUCT rev. 5 (skill-first): the product is the
 skill, each requirement names its layer, and this document designs the helpers and — only on
-evidence — core components (§1, §1.2). The contract is agreed **before** production code
+evidence — core components (§1, §1.2); v2.9 follows PRODUCT rev. 6: the thin architecture (§3.1)
+is the default and the full core a contingency (§3.2), each core component needs its own failure
+report, a minimal alternative and an acceptance test; route consent and owned vs borrowed sessions
+(§5.2); arms B0 and B1 (§18). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
@@ -85,8 +88,8 @@ interventions, correctness, recovery, tokens or wall time — without hurting co
 
 | Layer | Sections |
 |---|---|
-| Skill | §8 comparison rules (as instructions), §10.1–10.2 campaign workflow, §16 hosts |
-| Helpers | §7 exact source, §8 oracle and verdicts, §9 telemetry, §10.3 records, §11 cost, §14 run store |
+| Skill (arm B0) | §3.1 thin architecture, §8 comparison rules (as instructions), §10.1–10.2 campaign workflow, §16 hosts |
+| Helpers (arm B1) | §3.1 local run helper, §7 exact source, §8 oracle and verdicts, §9 telemetry, §10.3 records, §11 cost, §14 run store |
 | Native tools | §12 backends, §15 bootstrap and sign-in |
 | Core, only on evidence | §4 lifecycle and journal, §5 policy gate, §6 strict-mode broker, §13 remote wrapper |
 
@@ -101,8 +104,10 @@ interventions, correctness, recovery, tokens or wall time — without hurting co
 2. **User policy dominates project wishes.** A committed project file can ask for a GPU; it can
    never raise a limit, approve spending or send code to a new host.
 3. **The user chooses the backend and always sees it.** No silent fallback.
-4. **Every external action is journaled before it happens.** An unclear outcome becomes `UNKNOWN`
-   and is reconciled; it is never blindly retried.
+4. **An unclear outcome is `UNKNOWN`, never a guess.** It is never blindly retried and never
+   reported as success or cancellation. In the full core (§3.2) every external action is journaled
+   before it happens; in the thin architecture (§3.1) the skill and helpers report `UNKNOWN` and
+   what the user should check.
 5. **Honest isolation.** Jobs are trusted code running as the same user unless a real boundary
    (container, separate user) is configured. We do not claim more.
 6. **Reproducible by construction.** A run is an immutable `RunSpec`: exact source, job digest,
@@ -116,6 +121,52 @@ interventions, correctness, recovery, tokens or wall time — without hurting co
     agent side.
 
 ## 3. Components
+
+### 3.1 Thin architecture — the default (arms B0 and B1)
+
+```mermaid
+flowchart LR
+    SK["📘 SKILL.md<br/>choose route · campaign<br/>verify · record · stop"]
+    REF["📄 route reference<br/>read only when chosen<br/>local · official Colab · mailbox"]
+    H["🔧 local run helper (B1)<br/>source identity · deadline<br/>exit · output · oracle"]
+    N["🟢 native execution<br/>local card · official Colab tools"]
+    MB["📮 mailbox runner<br/>existing · only if approved"]
+    F["🗂️ plain files<br/>meet-runs/&lt;campaign&gt;/"]
+    SK --> REF
+    REF --> N
+    REF -.-> H --> N
+    REF -. "route approved" .-> MB
+    N --> F
+    H --> F
+    MB --> F
+    classDef skill fill:#f4f0ff,stroke:#7a5af0,stroke-width:2px,color:#2a2244
+    classDef gpu fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
+    classDef helper fill:#eef3fd,stroke:#3b6fd8,stroke-width:2px,color:#1f2a44
+    classDef store fill:#fff6e3,stroke:#e0a020,stroke-width:2px,color:#4a3510
+    class SK,REF skill
+    class N,MB gpu
+    class H helper
+    class F store
+```
+
+- **Arm B0:** the skill and its references, native execution, plain files — nothing else.
+- **Arm B1:** plus one **local run helper**, reusing the runner's existing code (deadline with
+  process-group cleanup, telemetry, `.done`, history). It records the actual source identity — or
+  marks the run *dirty / unverified* —, exit status, deadline outcome, output, and an independent
+  oracle result, and pins them before any comparison. It must not report a verified winner for a
+  wrong answer, a failed oracle, a stale result, a dirty tree or a timed-out process (fault-injection
+  tests), and its overhead against native execution is measured (§9.1). No database.
+- **Paid compute on native routes** (PRODUCT §1.1): provider-side limits where supported, otherwise
+  a narrowly scoped preflight on the supported route or explicit manual approval per acquire; a
+  route without a mandatory safety property is not used for paid compute (§5.2).
+- **The mailbox** stays as it is, used only after its route is approved.
+
+### 3.2 Full core — contingency
+
+The design below is **not** the default. A component from it is built only with (1) a failure
+report from the skill-first test showing a recurring failure B1 cannot reliably solve, (2) the
+smallest alternative considered and why it is not enough, and (3) a measurable acceptance test for
+that component alone. There is no blanket go-ahead for the whole core.
 
 ```mermaid
 flowchart TB
@@ -301,6 +352,17 @@ profile the user never approved is rejected.
 - **Strict mode:** approvals can only be created outside the agent's process — a host-native
   confirmation where the host offers one, or a small trusted broker the agent cannot drive. In strict
   mode a headless `meet approve` is refused.
+- **Route consent is its own approval** (PRODUCT §1.1): approving a GPU does not approve a route;
+  using the mailbox (code pushed to GitHub) or any other route needs its own approval, and a failed
+  native route never leads to a silent push or new session.
+- **Owned vs borrowed sessions.** Owned (acquired by the agent): released, with evidence that it
+  ended. Borrowed (opened by the user, e.g. the mailbox notebook): the agent may stop its runner,
+  only the user shuts the runtime down. Every result carries one cleanup state: `released`,
+  `runner_stopped_user_cleanup_required`, `nothing_running` or `unknown`. A local timeout or a client
+  disconnect is never reported as a confirmed cancellation.
+- **Fail closed:** a route that cannot provide a mandatory safety property (an approval check before
+  acquire, a bounded hold) is not used for paid compute. Same-user agents can bypass every control
+  by calling a provider directly; that and the residual billing risk are disclosed.
 
 ### 5.3 Session expiry is not a job deadline
 
@@ -742,7 +804,7 @@ however small.
 
 | Stage | Done when |
 |---|---|
-| **0. Skill-first test with design partners** | 5 people from the initial segment (PRODUCT §3) observed in their real workflow; native tools (A) vs the thin skill (B), adding one component (C) only after a failure B cannot fix; cold install and a fresh-context second session; verified outcome, active human minutes, elapsed time, cost, failures and unassisted repeat use recorded (opt-in, §17). |
+| **0. Skill-first test with design partners** | 5 people from the initial segment (PRODUCT §3) observed in their real workflow; their real native workflow (A) vs the skill alone (B0) vs the skill with the minimal helpers (B1), adding one component (C) only after a recurring failure B1 cannot fix; cold install and a fresh-context second session; verified outcome, active human minutes, elapsed time, cost, failures and unassisted repeat use recorded (opt-in, §17). |
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
 | **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec with requirements block, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry, overhead measured (§9.1). |
 | **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. With A1 this gives the first beta's two profiles: local GPU + Colab. |

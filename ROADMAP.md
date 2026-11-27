@@ -10,17 +10,17 @@ providers; value is proven before the provider list grows.
 ```mermaid
 flowchart LR
     D["✅ Done<br/>M0–M7<br/>telemetry · skill · history<br/>reports · hardening · tests · safety fixes"]
-    DP["🤝 M8<br/>skill-first test<br/>native vs thin skill · 5 users"]
+    DP["🤝 M8<br/>skill-first test<br/>native · B0 · B1 · 5 users"]
     S0["🧪 Stage 0 · M9<br/>spike: Colab CLI<br/>lifecycle facts"]
-    A["🧱 Stage A · M10<br/>only components<br/>a failure asks for"]
+    A["🧱 Stage A · M10<br/>contingency: only components<br/>a failure report asks for"]
     B["🔬 Stage B · M11<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
     C["🔌 Stage C · M12<br/>SSH + mailbox<br/>as adapter"]
     DD["📦 Stage D · M13<br/>packaging<br/>Claude Code · Codex"]
     E["🌍 Stage E · M14<br/>on demand<br/>providers · Colab API · MCP"]
     PRO["💎 Pro · M15–M16<br/>CUDA profiling"]
     V1["1.0 · M17"]
-    D --> DP -- "GO component" --> A --> B
-    DP -. "GO skill: ship it,<br/>no platform" .-> DD
+    D --> DP -- "GO C: one named<br/>component" --> A --> B
+    DP -. "GO B0 / B1:<br/>ship the skill" .-> DD
     D --> S0 --> A
     B --> C --> DD --> E --> PRO --> V1
     B -. "technical + adoption GO<br/>unlock new backends" .-> C
@@ -77,46 +77,62 @@ Small, safe fixes to what users run today, while stage A is designed.
 
 ## Stage 0 — demand and feasibility (in parallel)
 
-### 🔜 M8 — skill-first: a thin skill against native tools, with design partners
+### 🔜 M8 — skill-first: the skill alone and with helpers, against native tools
 
 Evidence before more building, and the smallest product tested on its own. Decision rules are
-written down **before** recruitment and are exploratory, not statistical. M10 starts only on a
-"GO component" below. *Design: §18, §17 · Requirements: PR-01, PR-26, PR-20, PR-22, PR-23.*
+written down **before** recruitment and are exploratory signals, not statistics or proof of
+product–market fit. M10 starts only on a "GO C" below.
+*Design: §3.1, §5.2, §18, §17 · Requirements: PR-01, PR-03, PR-07, PR-26, PR-20, PR-22, PR-23.*
 
-**Arm B, the thin skill** — workflow in the skill, machinery only where it must be enforced:
+**Arm B0 — the skill alone** (instructions, plain files, native execution):
 - [x] Install: exact version (`meet --version` checked), isolated venv, only with the user's
       consent; never `--break-system-packages`.
-- [x] Provider-neutral `SKILL.md` derived from PRODUCT §1.2: campaign workflow, local GPU first,
-      Colab through the official Colab tools with the mailbox as fallback, missing capability stated
-      (no assumption that one skill can call another), agent-written campaign records.
+- [x] Short entry `SKILL.md` derived from PRODUCT §1.2 — choose route, campaign, honest results,
+      records, safety — with route references read only when that route is chosen
+      (`reference/local.md`, `colab-official.md`, `mailbox.md`); mailbox setup only inside the
+      mailbox reference; a test keeps route details out of the entry file.
+- [x] Route consent separate from GPU consent; unavailable routes shown with the reason; owned vs
+      borrowed sessions with an explicit cleanup state in every result.
+- [x] README leads with the skill and a truthful route matrix (PRODUCT §1.4); mailbox as a
+      separate fallback section.
 - [ ] Quick start for a local-GPU campaign, tried by someone who did not write it.
-- [ ] Local path with **no GitHub and no notebook**: a small helper that runs a job under a hard
-      deadline, records `.done`, results, telemetry and history (reusing today's code).
-- [ ] A helper that writes and validates the JSON/JSONL campaign records (today the agent writes
-      them, following the skill); no database.
-- [ ] Deterministic checks a prompt cannot replace: the oracle pinned (command + file hashes),
-      matched measurements recorded, verified-or-not decided by code, never by the model.
-- [ ] Missing capabilities reported explicitly per host; never a silent switch of destination.
+- [ ] Measured: loaded skill tokens and route-selection errors; in a local-only clean folder the
+      agent neither reads the mailbox reference nor runs its setup.
 
-**The experiment** — same agent, task, GPU access, oracle and resource envelope in every arm:
+**Arm B1 — the same skill plus the minimal helpers** (DESIGN §3.1):
+- [ ] **Local run helper** with **no GitHub and no notebook**, reusing today's runner code: actual
+      source identity or an explicit *dirty / unverified* mark, exit status, deadline with
+      process-group cleanup, output, an independent oracle result, pinned before comparison.
+- [ ] Fault injection: a wrong answer, a failed oracle, a stale result, a dirty tree and a timed-out
+      process — none may yield a verified winner. Overhead against native execution measured.
+- [ ] Campaign records written and validated by the helper (JSON/JSONL); no database.
+- [ ] Paid trials: provider-side limits where supported, otherwise a narrowly scoped preflight or
+      manual approval per acquire; a route without a mandatory safety property is not used for
+      paid compute; a denied or expired approval cannot launch through the guarded route; a
+      disconnect is never shown as confirmed cancellation; cleanup evidence and residual billing
+      risk recorded.
+
+**The experiment** — safety constraints in every arm:
 - [ ] **Find the pain.** Recruit 5 independent, frequent GPU experimenters (local NVIDIA GPU and/or
-      Colab; note lab-server users who ask). Observe their last real experiment and their native
-      tools. Pass: ≥ 3 have a recurring, meaningful pain and a real upcoming task.
-- [ ] **Offer the outcome, not the architecture.** Pass: ≥ 3 volunteer a real task; every refusal
+      Colab; note lab-server users who ask). Observe their last real experiment and their real
+      notes and scripts. Signal: ≥ 3 have a recurring, meaningful pain and a real upcoming task.
+- [ ] **Offer the outcome, not the architecture.** Signal: ≥ 3 volunteer a real task; every refusal
       and its reason recorded.
-- [ ] Arms: **A** native tools (official provider skill/CLI or direct local execution, project tests,
-      ordinary notes) · **B** thin MeetProxy skill · **C** B plus one specific component, only after a
-      failure B cannot reliably solve — the whole core is never built just to create this arm.
-- [ ] A real CUDA project with an existing correctness check, 3–5 variants; a cold install and a
-      second session with fresh context. Record verified outcome, active human minutes, elapsed
-      time, total cost where known, failures. One expert with mature scripts, one user without.
+- [ ] Arms: **A** the user's real native workflow (never a deliberately weak baseline) · **B0** the
+      skill alone · **B1** the skill + helpers · **C** B1 plus one specific component, only after a
+      recurring failure B1 cannot reliably solve — the whole core is never built to create this arm.
+- [ ] **Execution tests** with the same model, tests, hardware access, limits and candidate set in
+      every arm; **open-ended research outcomes** reported separately. A real CUDA project with an
+      existing correctness check, 3–5 variants; a cold install and a second session with fresh
+      context. Record cold onboarding, verified outcome, active human minutes, elapsed time, total
+      cost where known, failures, evidence validity. One expert with mature scripts, one without.
 - [ ] **Repeat use.** Within two weeks, ≥ 2 independent users choose it again for a real task without
       prompting or setup help. Count everyone recruited; explain each non-activation.
-- [ ] **Decide:** **GO skill** — B beats A by the pre-agreed margin, no correctness or safety
-      regression, users return → ship B, stop the broad platform build · **GO component** — B fails
-      on a specific recurring problem and C measurably fixes it without unacceptable friction → build
-      only that component (M10) · **STOP or narrow** — A suffices, users do not return, or complexity
-      costs more than it saves; keep the mailbox as a specialised tool if it stays useful.
+- [ ] **Decide:** **GO B0** — instructions alone win safely → ship them · **GO B1** — the helpers
+      remove a measured blocker and users return → ship that skill · **GO C** — only a named
+      component fixes an observed recurring failure → build only it (M10) · **STOP / narrow** — the
+      native workflow suffices, switching costs dominate, or users do not return; keep the mailbox as
+      a specialised tool if it stays useful. No new backend on a documentation-only win.
 - [ ] Opt-in records only; findings go into PRODUCT through the normal chain.
 
 ### ⬜ M9 — spike: Colab CLI lifecycle
@@ -135,9 +151,10 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 
 ### ⬜ M10 — the contract on the local GPU and on Colab, as thin slices
 
-**Conditional.** Each item below is built only on a *GO component* from M8 — for a recurring failure
-the thin skill could not solve — and kept only if it measurably fixes it. Items no failure asks for
-stay unbuilt. Provider execution, auth, transfer and session discovery are reused from official
+**Contingency (DESIGN §3.2), no blanket go-ahead.** Each item below is built only on a *GO C* from
+M8 and needs its own failure report (a recurring failure B1 could not solve), the smallest
+alternative considered, and a component-level acceptance test; it is kept only if it measurably
+fixes that failure. Items no failure asks for stay unbuilt. Provider execution, auth, transfer and session discovery are reused from official
 tools, not reimplemented.
 
 **A1 · local vertical slice** — *Design: §9, §9.1, §7, §4, §5, §13, §14 · PR-04, PR-06, PR-09, PR-10, PR-07, PR-14, PR-15, PR-27, PR-28*
@@ -251,7 +268,7 @@ The first installable skill and real feedback already come from M8; this adds ho
       (`.agents/skills`, `agents/openai.yaml`).
 - [ ] Pinned releases with checksums; bootstrap installs only with permission.
 - [ ] Support matrix with a smoke test per listed host; untested hosts marked as such.
-- [ ] Publish the free skill on marketplaces once M8 decides GO skill or GO component.
+- [ ] Publish the free skill on marketplaces once M8 decides GO B0, GO B1 or GO C.
 
 ## Stage E — on demand
 

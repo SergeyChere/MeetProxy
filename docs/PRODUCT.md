@@ -27,9 +27,11 @@ A change starts here and flows down: a new or changed requirement first, then th
 design that meet it, then the milestone that builds it. A test keeps the links intact (every
 `PR-NN` is designed and planned, every `§N` exists, every skill section named in §1.2 exists).
 
-Status: 27 Nov 2026 (rev. 5, **skill-first**: the product is an installable skill with small
-executable helpers over official tools, not a platform; no new requirements, PR-01 becomes Must and
-every requirement names the layer that delivers it). Everything here is a **hypothesis to validate**,
+Status: 27 Nov 2026 (rev. 6, **skill-first**: the product is an installable skill with small
+executable helpers over official tools, not a platform. Rev. 6 adds what exists today (§1.4), route
+consent and session ownership (§1.1), a short entry skill with route references loaded on demand
+(§1.2), and splits the skill arm of the test into instructions-only and instructions-plus-helpers
+(§9); no new requirements). Everything here is a **hypothesis to validate**,
 not shipped behaviour or customer research. Savings are claimed only after they are measured (PR-20).
 
 Further changes come from design partners, experiments or concrete implementation constraints — not
@@ -74,18 +76,65 @@ network access and nested-skill support differ between hosts: the skill says whi
 missing and never silently switches destination. It does not assume that one host can invoke another
 skill; it uses explicit command-line fallbacks.
 
+**Route consent is separate from GPU consent.** Approving "use my Colab" does not approve sending
+code through GitHub. Every route that is unavailable is shown with the reason, and using a different
+route — the mailbox in particular, which pushes code to the user's repository — needs its own
+explicit approval. A failed native route never leads to a silent push or a new session.
+
+**Owned and borrowed sessions are different.** A session the agent acquired is *owned*: the agent
+releases it and records the evidence. A runtime the user opened (the mailbox notebook) is
+*borrowed*: the agent may stop its runner, but only the user shuts the runtime down. Every result
+says which of these holds: *runner stopped*, *session released*, or *cleanup still required by the
+user*.
+
+**Paid compute fails closed.** For paid runs MeetProxy uses, in this order, provider-side limits,
+a narrowly scoped executable preflight on the supported route, or explicit manual approval per
+acquire; if a mandatory safety property is unsupported on a route, that route is not used for paid
+compute. A local timeout does not mean a remote job or a paid session ended; a client disconnect is
+never reported as a confirmed cancellation. An agent running as the same user can bypass any of
+these controls by calling a provider directly; this residual risk, and the residual billing risk,
+are stated, not hidden.
+
 ### 1.2 What the skill contains
 
-The skill is derived from this document; each of its sections serves these requirements:
+The skill is derived from this document. It **loads progressively**: the entry `SKILL.md` is short —
+choose an approved route, define the experiment, verify, record, stop — and the details of a route
+are in a reference file read **only when that route is chosen**. Mailbox setup runs only after the
+user chose the mailbox, never during skill discovery. Loaded tokens and route-selection errors are
+measured (§9).
 
-| Skill section | Serves |
+| Skill section or reference | Serves |
 |---|---|
+| `Choose a route` — approved route only, unavailable routes shown with the reason, route consent | PR-02, PR-03, PR-04, PR-18 |
 | `Campaign` — the workflow of §5 | PR-22, PR-05, PR-11, PR-23 |
-| `Where the GPU is` — local card, official Colab tools, mailbox; missing capability stated | PR-02, PR-03, PR-04, PR-18 |
 | `Honest results` — correctness first, matched comparisons, too-good-to-be-true checks | PR-05, PR-20 |
 | `Records` — what is written down per campaign and where | PR-16, PR-23, PR-25 |
-| `Safety` — approvals, deadlines, secrets, trusted code | PR-07, PR-08, PR-09 |
-| `Mailbox route` — today's Colab runner through a git branch | PR-06, PR-10, PR-12, PR-14 |
+| `Safety` — approvals, deadlines, owned vs borrowed sessions, secrets, trusted code | PR-07, PR-08, PR-09, PR-10 |
+| `reference/local.md` — the local card: deadlines that also stop child processes, source identity | PR-04, PR-06, PR-07 |
+| `reference/colab-official.md` — the official Colab tools: owned sessions, release, what is unknown | PR-02, PR-07, PR-10 |
+| `reference/mailbox.md` — today's Colab runner through a git branch | PR-06, PR-10, PR-12, PR-14 |
+
+### 1.3 The skill and its helpers per arm
+
+The skill-first test (§9) separates what instructions achieve from what code adds: **B0** is the
+skill alone (instructions, plain files, native execution, safely bounded), **B1** the same skill
+with the minimal helpers. A helper is added only for a guarantee a tested claim needs — source
+identity (or an explicit *dirty / unverified* mark), exit status, deadline, output and an independent
+oracle result, pinned before any comparison. It must not report a verified winner for a wrong
+answer, a failed oracle, a stale result, a dirty tree or a timed-out process, and its overhead
+against native execution is measured (PR-27).
+
+### 1.4 What exists today
+
+| Route or part | Status |
+|---|---|
+| Mailbox route (Colab notebook runner through a git branch) | **working and tested**: exact commit, deadlines, telemetry, history, reports |
+| Local card, following the skill | **instructions only** — no helper yet; results are as reliable as the agent |
+| Official Colab CLI / skill underneath | **instructions only, not yet tried** (spike planned) |
+| Helpers for local runs and campaign records (B1) | **not shipped** |
+| Core components (journal, lifecycle, policy broker) | **not built**; conditional on evidence (§9) |
+
+Public pages describe these statuses as they are; no unsupported capability is claimed.
 
 ## 2. The problem
 
@@ -179,11 +228,11 @@ needs come from design partners, not from more analysis.
 |---|---|---|---|---|
 | **PR-01** | **The skill is the product.** One installable natural-language skill (`/meetproxy`, `$meetproxy`) is the whole user interface; helpers and the CLI are for the agent. No commands to memorize for the human; installing it adds no infrastructure the user must run. | Must | Skill | a first-time user gets a result without reading CLI docs |
 | **PR-02** | **Official tools underneath.** Use provider CLIs and sign-ins; never re-implement vendor auth or transport; install adapters only with consent. | Must | Native | no own auth for Colab/SSH; adapter install asks first |
-| **PR-03** | **The user chooses the GPU.** Named profiles; no implicit provider or destination switch; the backend is shown on every result. | Must | Skill + Helper | contract tests: no run on an unapproved profile |
+| **PR-03** | **The user chooses the GPU.** Named profiles; no implicit provider, route or destination switch — a different route needs its own approval; the backend is shown on every result. | Must | Skill + Helper | contract tests: no run on an unapproved profile |
 | **PR-04** | **Quick Run.** "Run this on a GPU" with minimal metadata, keeping safety and exact source. | Should | Skill + Native | quick run needs only the script and a profile |
 | **PR-05** | **Benchmark Mode.** Correctness oracle — reusing the project's existing tests, reference implementations, fixtures or known exact results where possible —, repeats, compatible environments only; heterogeneous GPUs screen, a matched benchmark on one reference GPU — declared before screening, with budget and time reserved for it — decides; incorrect outputs never "win"; no adequate oracle → no verified-winner claim. | Must | Skill + Helper | an incorrect fast variant is rejected |
 | **PR-06** | **Exact source.** Every job runs the commit it was submitted with, or does not run. | Must | Helper | branch moved after submit → submitted commit runs |
-| **PR-07** | **Paid compute is safe by default.** Default deny, scoped approvals, time limits, bounded session hold, estimates; best-effort vs hard limits disclosed; no monetary cap promised without provider enforcement. | Must | Native + Helper | no paid acquire without approval; no unbounded hold |
+| **PR-07** | **Paid compute is safe by default.** Default deny, scoped approvals, time limits, bounded session hold, estimates; fails closed where a mandatory safety property is unsupported; owned sessions released with evidence, borrowed ones left to the user and said so; best-effort vs hard limits disclosed; no monetary cap promised without provider enforcement. | Must | Native + Helper | no paid acquire without approval; no unbounded hold |
 | **PR-08** | **No new credential burden.** Reuse official sign-ins; other tokens in the OS keychain; never in chat, config or repo; minimal job environment; same-user limits documented. | Must | Native | tokens never appear in chat or files |
 | **PR-09** | **Code stays where it is by default.** Local and private profiles; consent per repository and destination; history-free snapshots. | Must | Skill + Helper | no transfer to a new destination without consent |
 | **PR-10** | **Failures are visible and recoverable.** Reconnect, explicit `UNKNOWN`, no silent duplicate runs, partial results kept, a direct-provider escape hatch. | Must | Native; Core if needed | disconnect, crash and interrupted transfer tests |
@@ -283,20 +332,27 @@ with a cold install and a second session with fresh context:
 
 | Arm | What is tested |
 |---|---|
-| **A · native tools** | the official provider skill/CLI or direct local execution, project tests, ordinary notes |
-| **B · the MeetProxy skill** | the skill, its helpers and records, native execution; the mailbox only where needed |
-| **C · B + one component** | one specific core component, added only after a failure B cannot reliably solve — the whole core is never built just to create this arm |
+| **A · native tools** | the user's **real** workflow — official provider skill/CLI or direct local execution, project tests, their own notes and scripts; never a deliberately weak baseline |
+| **B0 · the skill alone** | the MeetProxy instructions, plain files, native execution (local runs or explicitly bounded native runs) |
+| **B1 · the skill + helpers** | the same instructions plus the minimal helpers of §1.3; the mailbox only where needed and approved |
+| **C · B1 + one component** | one specific core component, added only after a recurring failure B1 cannot reliably solve — the whole core is never built just to create this arm |
 
-Recorded: verified outcome, active human minutes, elapsed time, total cost where known, failures,
-unassisted repeat use. Decisions:
+Safety constraints apply in every arm. **Execution tests** use the same model, tests, hardware
+access, limits and candidate set in every arm; **open-ended research outcomes** are reported
+separately, so a lucky hypothesis is not credited to the tool. Recorded: cold onboarding, verified
+outcome, active human minutes, elapsed time, total cost where known, failures, evidence validity,
+loaded skill tokens, route-selection errors, unassisted repeat use. Decisions:
 
-- **GO skill** — B beats A by a pre-agreed margin (one of the two routes below), with no correctness
-  or safety regression, and independent users choose it again for a real task → ship the skill; no
-  broad platform build.
-- **GO component** — B fails on a specific recurring problem and C measurably fixes it without
-  unacceptable adoption friction → build only that component.
-- **STOP or narrow** — A is enough, users do not return, or the added complexity costs more than it
-  saves; the mailbox stays as a specialised tool if it is still useful.
+- **GO B0** — instructions alone win safely → ship them as the product.
+- **GO B1** — the minimal helpers remove a measured blocker and users return → ship that skill.
+- **GO C** — only a named component fixes an observed recurring failure → build only that
+  component, with its own failure report and acceptance test.
+- **STOP or narrow** — the native workflow is enough, the cost of switching dominates, or users do
+  not return; the mailbox stays as a specialised tool if it is still useful.
+
+No new backend follows from a documentation-only win. The recruitment targets (5 recruits, ≥ 3
+real tasks, ≥ 2 unassisted repeat users) are exploratory signals, not proof of product–market fit,
+and no target justifies building the whole framework.
 
 **Two routes to GO**, each with margins and measurement rules fixed before the first run:
 
