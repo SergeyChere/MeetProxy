@@ -1,8 +1,8 @@
 # Spike: Colab CLI lifecycle
 
-Stage 0 of [DESIGN.md](../DESIGN.md#15-stages-and-acceptance-gates). Goal: learn, on real sessions,
+Stage 0 of [DESIGN.md](../DESIGN.md#18-stages-and-acceptance-gates). Goal: learn, on real sessions,
 what the official Colab CLI can and cannot do for MeetProxy's lifecycle — **before** building the
-adapter. Until this page holds results, every Colab capability in DESIGN §9 is **provisional**.
+adapter. Until this page holds results, every Colab capability in DESIGN §12 is **provisional**.
 
 Rules of evidence (DESIGN §4.1): **absence is not evidence.** A process that is gone, a missing file
 or an ended session prove nothing about *why*. Only a positive signal tied to the job's identity
@@ -115,7 +115,7 @@ print("SIGTERM sent to", ident["pid"])
 
 CLI version: … · Date (UTC): … · GPU / driver / CUDA: … · Budget used: … session hours
 
-| Capability (DESIGN §9) | PASS / FAIL / UNKNOWN | Observation or guarantee? | Evidence (scenario, file, timestamp) |
+| Capability (DESIGN §12) | PASS / FAIL / UNKNOWN | Observation or guarantee? | Evidence (scenario, file, timestamp) |
 |---|---|---|---|
 | sign-in checkable without side effects | | | 2 |
 | acquire a GPU by type | | | 3 |

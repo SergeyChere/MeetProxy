@@ -7,3 +7,6 @@ it on every push) and add a test with every change — a bug fix starts with a t
 the docs in sync — `skill/meetproxy/SKILL.md` is a standalone copy of `meetproxy/guide.md` for skill
 marketplaces; change both. `scripts/build_skill.sh` builds the upload zip in `dist/`.
 When a milestone item is done, tick it in `ROADMAP.md` in the same commit.
+Plans live in a chain: `docs/PRODUCT.md` (requirements `PR-NN`) → `docs/DESIGN.md` (sections cite
+PR-NN) → `ROADMAP.md` (milestones cite §N and PR-NN). Change them in that order; `tests/test_docs.py`
+checks the links.

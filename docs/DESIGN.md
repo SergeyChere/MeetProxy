@@ -1,12 +1,17 @@
-# MeetProxy design: reproducible GPU experiments for AI agents
+# MeetProxy design: how the product requirements are met
 
-Status: revised proposal, 27 Nov 2026 (v2.2). v2 incorporated the first external design review;
+**Derived from [PRODUCT.md](PRODUCT.md)** (why, for whom, requirements `PR-NN`); the
+[ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
+requirements it serves.
+
+Status: revised proposal, 27 Nov 2026 (v2.3). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
 window, per-operation retry policy, history-free snapshots by archive, per-attempt storage, separate
 execution / delivery / correctness / comparison verdicts, a GO / ITERATE / STOP pilot, beta before
-new adapters). The contract is agreed **before** production code
+new adapters); v2.3 derives the design from PRODUCT.md and adds Quick Run / Benchmark modes,
+telemetry levels, parallel independent jobs under one plan, and cost estimates. The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
@@ -22,9 +27,35 @@ tools (Colab CLI, `ssh`); MeetProxy uses them.
 **The product surface is a skill** (`/meetproxy` in Claude Code, `$meetproxy` in Codex). The skill
 explains intent and results; the core enforces everything that matters.
 
-**Value must be proven, not assumed** (section 14): MeetProxy is worth building only if, on a real
+**Value must be proven, not assumed** (section 17): MeetProxy is worth building only if, on a real
 CUDA experiment, it beats the official Colab skill alone on at least one target metric — manual
 interventions, correctness, recovery, tokens or wall time — without hurting correctness.
+
+### 1.1 Requirements → design
+
+| Requirement (PRODUCT) | Where it is met |
+|---|---|
+| PR-01 one entry point | §16 hosts, §15 profiles and `doctor` |
+| PR-02 official tools underneath | §12 backends, §15 bootstrap |
+| PR-03 user chooses the GPU | §5.1 policy layers, §15 profiles |
+| PR-04 Quick Run | §9 run modes |
+| PR-05 Benchmark Mode | §8 BenchmarkSpec, §9 run modes |
+| PR-06 exact source | §7 RunSpec, §5.4 snapshots |
+| PR-07 paid compute safe by default | §5.2 approvals, §5.3 session expiry |
+| PR-08 no new credential burden | §6 trust model and credentials |
+| PR-09 code stays where it is | §5.4 outbound data |
+| PR-10 failures visible and recoverable | §4 lifecycle, §4.3 journal |
+| PR-11 parallel independent jobs | §10 plans and parallel jobs |
+| PR-12 few tokens | §4.2 verdicts, §9 telemetry levels |
+| PR-13 readable results | §14 run store (reports) |
+| PR-14 telemetry levels | §9 run modes and telemetry levels |
+| PR-15 existing projects unchanged | §7 RunSpec (any script, clean worktree) |
+| PR-16 no lock-in | §14 run store, §3 components (no server) |
+| PR-17 minutes to first run | §15 `doctor`, §9 Quick Run |
+| PR-18 honest support | §16 hosts, §12 capabilities and contract tests |
+| PR-19 integrate, don't replace | §12 SSH backend, §14 export |
+| PR-20 evidence before claims | §17 proving value, §18 gates |
+| PR-21 cost per correct result | §11 cost estimates |
 
 ## 2. Principles
 
@@ -92,6 +123,8 @@ flowchart TB
 No central server, scheduler or queue in the MVP.
 
 ## 4. Run lifecycle
+
+*Serves PR-10, PR-06.*
 
 **Protocol:** `validate → approve → acquire/attach → stage → start → observe → collect → release → compare`
 
@@ -211,6 +244,8 @@ refusal when reconciliation is impossible.
 
 ## 5. Policy gate and money
 
+*Serves PR-07, PR-03, PR-09.*
+
 Enforced in the core for every call, with or without the skill. Threat model: section 2.1.
 
 ### 5.1 Policy layers
@@ -239,7 +274,7 @@ profile the user never approved is rejected.
 - **Job deadline:** enforced by the wrapper on the GPU machine; ends the job.
 - **Session expiry:** ends the paid session. It is a **hard TTL** only when the provider enforces it
   server-side or an independent watchdog (not the user's laptop) does; this is a backend capability,
-  confirmed by the spike (section 15) before it is claimed.
+  confirmed by the spike (section 18) before it is claimed.
 - Otherwise cleanup is **best-effort** (reconcile on the next `meet` run), the residual risk — a
   session left running if the controlling machine disappears — is stated, and automatic paid
   acquisition needs a separate consent to that risk.
@@ -271,6 +306,8 @@ profile the user never approved is rejected.
 
 ## 6. Trust model and credentials
 
+*Serves PR-08.*
+
 - **Trusted-code mode (default, stated plainly):** a job runs as the same OS user as the wrapper. It
   could reach anything that user can — files, keyring session, provider sign-ins. MeetProxy reduces
   accidental exposure; it does not stop deliberate access. `meet doctor` reports the isolation level
@@ -295,6 +332,8 @@ profile the user never approved is rejected.
   treated as a command by the core.
 
 ## 7. RunSpec and AttemptManifest
+
+*Serves PR-06, PR-15.*
 
 Two objects, because some facts exist only after a machine was obtained.
 
@@ -337,6 +376,8 @@ Two objects, because some facts exist only after a machine was obtained.
 
 ## 8. BenchmarkSpec and verdicts
 
+*Serves PR-05.*
+
 Required for any "faster / slower" claim.
 
 - **Measurement schema** (stable JSON / CSV): `metric, unit, phase, direction (lower/higher is
@@ -357,7 +398,67 @@ Required for any "faster / slower" claim.
 - Telemetry averages are time-weighted. `nvidia-smi` stays coarse (busy, throttled, near OOM), not a
   measure of kernel efficiency; Nsight Compute is a later opt-in.
 
-## 9. Backends: one contract, declared capabilities
+## 9. Run modes and telemetry levels
+
+*Serves PR-04, PR-05, PR-12, PR-14, PR-17.*
+
+Two modes, one safety contract:
+
+| | **Quick Run** (default) | **Benchmark Mode** |
+|---|---|---|
+| Asked as | "run this on my GPU" | "which variant is faster?" |
+| Required input | the script, a profile | + `BenchmarkSpec` (§8): baseline, candidate, oracle, repeats |
+| Always kept | exact source (§7), policy gate (§5), journal (§4.3), verified delivery (§4.2) | the same |
+| Verdicts | execution, delivery | + correctness, comparison |
+| Default telemetry | Standard | Standard (Deep on request) |
+
+Telemetry levels, chosen per run (`# telemetry: simple | standard | deep`):
+
+| Level | What is collected | What the agent gets |
+|---|---|---|
+| **Simple** | exit code, duration, GPU name | one line: `exit 0 · 41 s · T4` |
+| **Standard** | + `nvidia-smi` sampling (utilization, memory, clocks, temperature, power, throttling), time-weighted | one verdict line: `gpu ok …` / `gpu WARN …` / `UNKNOWN` / `INSUFFICIENT_DATA` |
+| **Deep** (opt-in) | + kernel profiling (Nsight Compute) | a short table of the top kernels; full profile as a file |
+
+Nothing is acquired and nothing runs until the user asks (PR-04): there is no resident service.
+
+## 10. Plans and parallel independent jobs
+
+*Serves PR-11, PR-07, PR-03, PR-21.*
+
+- A **plan** groups runs the user approves once: the variants, the profiles they may use, the
+  maximum concurrency, the time and budget limits. The approval (§5.2) is scoped to the plan; a run
+  outside it needs a new approval.
+- **Independent jobs only:** each run is a separate RunSpec with its own attempts, journal entries
+  and artifacts; runs of a plan never share state. Different profiles may run concurrently
+  (e.g. local + Colab, or two Colab sessions); each run states its backend (PR-03).
+- **Scheduling is simple and local:** the core starts runs up to the plan's concurrency on the
+  approved profiles, in the plan's order, and stops starting new runs when a limit is reached. No
+  queue service, no work stealing across providers.
+- **Comparison inside a plan** follows §8: only runs with compatible environment fingerprints are
+  compared for speed; runs on different GPU types are reported side by side as a hardware
+  comparison, never as an algorithm speed-up.
+- **Out of scope:** distributed training, collective communication, automatic partitioning of a
+  single workload across machines.
+
+## 11. Cost estimates
+
+*Serves PR-21, PR-07.*
+
+- An estimate is **per correct result**, not per hour: start-up, staging, the expected number of
+  repeats and failed attempts, idle time inside the collection window (§5.3), and the provider's
+  billing unit.
+- Sources are named (provider price list, the user's own figures, past runs in history); a missing
+  price is shown as **unknown** and triggers consent or refusal (§5.3), never a guess presented as
+  fact.
+- After a plan, the report shows estimate vs actual where the provider exposes actual usage, and
+  "estimate only" where it does not.
+- A plan's budget is a **requested** limit: MeetProxy enforces time limits and stops starting new
+  runs; it does not promise a monetary cap the provider cannot enforce.
+
+## 12. Backends: one contract, declared capabilities
+
+*Serves PR-02, PR-18, PR-19.*
 
 Each adapter publishes a `CapabilitySet`; the core checks a run's requirements against it **before
 acquire** and fails with a structured error (`unsupported: cancel`) otherwise. **Every `colab-cli`
@@ -381,7 +482,7 @@ Adapters pass shared **contract tests** against a fake backend (supported and un
 operations, connection loss, timeout, duplicate requests, orphan sessions) and a real smoke test per
 backend before they are declared supported.
 
-## 10. Remote wrapper
+## 13. Remote wrapper
 
 - **Built, not hand-written twice:** a versioned zipapp generated from the same modules the core
   uses (process group, deadline, telemetry, masking). Its digest is part of the RunSpec; a protocol
@@ -393,7 +494,9 @@ backend before they are declared supported.
 - **Preflight on the GPU machine:** Python version, `nvidia-smi`, disk space, `git`; missing tools are
   reported before the job, not as a mysterious failure.
 
-## 11. Artifacts and the run store
+## 14. Artifacts and the run store
+
+*Serves PR-13, PR-16, PR-19.*
 
 - `.meetproxy/runs/<run_id>/` with an immutable `manifest.json` (files, sizes, SHA-256), the
   RunSpec, the journal and the artifacts. `.meetproxy/` is excluded from git.
@@ -403,7 +506,9 @@ backend before they are declared supported.
 - **Git sync is opt-in** and limited to an allowlisted set of small artifacts (results, manifest,
   verdict, reports). The git mailbox keeps its own branch as today.
 
-## 12. Profiles, `doctor`, `auth`, bootstrap
+## 15. Profiles, `doctor`, `auth`, bootstrap
+
+*Serves PR-01, PR-03, PR-17, PR-08.*
 
 - **Profiles** (`meet add / use / backends`, `--on <profile>`) live in user config; the project
   file only *prefers* one. First use of the skill: `meet doctor` shows what is possible and the user
@@ -433,7 +538,9 @@ backend before they are declared supported.
 - **Bootstrap** installs a pinned release (tag + checksum), only with the user's permission; never an
   unverified branch. Interactive sign-ins (`colab auth login`) are done by the human in a terminal.
 
-## 13. Hosts: what is supported is what is tested
+## 16. Hosts: what is supported is what is tested
+
+*Serves PR-01, PR-18.*
 
 One shared `SKILL.md` plus thin host manifests (Claude: skill folder / plugin; Codex:
 `.agents/skills`, `agents/openai.yaml`). A support matrix lists host and version, shell and network,
@@ -446,7 +553,9 @@ install, auth and cancellation, each backed by a smoke test.
 | Cloud sandboxes (Claude Code web, Codex cloud) | git-mailbox only; after the first two |
 | Chat without a shell (ChatGPT, Claude chat) | not supported; a hosted MCP server needs its own auth, tenancy and billing model and is considered only on proven demand |
 
-## 14. Proving value
+## 17. Proving value
+
+*Serves PR-20.*
 
 An exploratory pilot, not a statistical proof — and planned before it is run:
 
@@ -455,9 +564,11 @@ An exploratory pilot, not a statistical proof — and planned before it is run:
    threshold, and the forced-disconnect scenario.
 2. **Same task, same conditions:** one real CUDA experiment (ColorSplit / queens-rect variants), the
    same agent model and version, the same prompt, the same GPU type and budget — **official Colab
-   skill alone** vs **MeetProxy**.
-3. **Several paired runs** in **randomized order**, not one session each. Setup and sign-in steps
-   count as manual interventions; the forced-disconnect test is run separately from the main
+   skill alone** and **direct SSH** (where a host is available) vs **MeetProxy**, including one plan
+   with two independent jobs running concurrently on two approved profiles (§10).
+3. **Several paired runs** in **randomized order**, not one session each. Time to first run,
+   setup and sign-in steps count (as time and as manual interventions); hardware and price
+   differences across providers are reported separately; the forced-disconnect test is run separately from the main
    comparison. Every failure is recorded.
 4. **Everything published:** protocol, every run (not only the best), raw data, limitations.
 5. **Decision, fixed in advance:**
@@ -469,19 +580,19 @@ An exploratory pilot, not a statistical proof — and planned before it is run:
 
 No token, time or reliability savings are claimed before this.
 
-## 15. Stages and acceptance gates
+## 18. Stages and acceptance gates
 
 | Stage | Done when |
 |---|---|
-| **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 9) is filled with facts. Nothing unsupported is claimed. |
-| **A1. Local vertical slice** | One local run end to end: immutable RunSpec, minimal journal, verified artifacts, verdicts. |
+| **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
+| **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry. |
 | **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. |
-| **A3. Benchmark validation** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts. |
+| **A3. Benchmark Mode and plans** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10); cost estimate vs actual (§11). |
 | **A4. Profiles and auth** (as needed) | `meet add / use / backends`, `meet auth`; strict-mode broker and provider token framework stay out until needed. |
-| **B. Proof of value** | The pre-registered pilot of section 14 ends in **GO**; a minimal skill package and install path go to a small external beta. |
+| **B. Proof of value** | The pre-registered pilot of section 17 (vs the official Colab skill and direct SSH, including a parallel plan) ends in **GO**; a minimal skill package and install path go to a small external beta; time to first run measured. |
 | **C. SSH + mailbox** | Only after GO: SSH on one Linux host; the mailbox behind the adapter contract, migration versioned separately. |
 | **D. Packaging** | Claude Code and Codex packages, pinned releases, tested support matrix, quick start. |
-| **E. On demand** | RunPod / Vast / Lambda provisioning, Colab API, hosted MCP, multi-GPU. |
+| **E. On demand** | RunPod / Vast / Lambda provisioning, Colab API, hosted MCP, Slurm / Kubernetes / MLflow integrations, Deep telemetry (Nsight). |
 
 **Regression scenarios** every adapter must pass before it is declared supported: duplicate starts;
 crash before / after remote acquire; lost connection with the job still running; process gone
@@ -489,14 +600,15 @@ without a manifest; failed cancel; interrupted transfer; withheld required artif
 enforce expiry; reused approval; branch changed after submit.
 
 **Gate:** no new backend until local + Colab show reliable cancellation and recovery, correct
-results, and the pilot of section 14 ends in GO. Fault injection and real-backend tests count more
+results, and the pilot of section 17 ends in GO. Fault injection and real-backend tests count more
 than a coverage percentage.
 
-## 16. Non-goals and open questions
+## 19. Non-goals and open questions
 
-**Non-goals:** a hosted MCP service (until proven demand), a central scheduler, universal cloud
-provisioning, protection against malicious code under the same user, a guaranteed monetary cap
-without provider support, exactly-once execution.
+**Non-goals** (as in [PRODUCT.md §10](PRODUCT.md#10-non-goals)): distributed training and tightly
+coupled multi-GPU workloads, automatic parallelization of arbitrary code, a hosted MCP service (until
+proven demand), a central scheduler, universal cloud provisioning, protection against malicious code
+under the same user, a guaranteed monetary cap without provider support, exactly-once execution.
 
 **Open questions** (most answered by the spike):
 

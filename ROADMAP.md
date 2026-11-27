@@ -1,9 +1,10 @@
 # Roadmap
 
-What is done, what comes next, and why in that order. Direction and contract:
-[docs/DESIGN.md](docs/DESIGN.md) — reproducible GPU experiments for AI agents, one skill, the GPU the
-user chooses. Safety, lifecycle and measurement come before new providers; value is proven before
-the provider list grows.
+**When** things happen. It is derived from the other two documents:
+[PRODUCT.md](docs/PRODUCT.md) (why, for whom, requirements `PR-NN`) →
+[DESIGN.md](docs/DESIGN.md) (how, sections `§N`) → this roadmap. Every milestone names the design
+sections it builds and the requirements it serves. Safety, lifecycle and measurement come before new
+providers; value is proven before the provider list grows.
 
 ```mermaid
 flowchart LR
@@ -40,11 +41,11 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 
 | | Milestone | What it gave |
 |---|---|---|
-| ✅ | **M0 GPU telemetry** | `nvidia-smi` sampled every second: raw `gpu.csv`, `gpu_stats` in `.done`, one flags line for the agent |
+| ✅ | **M0 GPU telemetry** | `nvidia-smi` sampled every second: raw `gpu.csv`, `gpu_stats` in `.done`, one flags line for the agent (PR-12, PR-14) |
 | ✅ | **M1 Standalone skill** | `skill/meetproxy/` and `scripts/build_skill.sh` → upload zip |
 | ✅ | **M2 Diagrams in markdown** | [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md), colored Mermaid |
 | ✅ | **M3 Run history** | `out/history.csv`, `meet history` |
-| ✅ | **M4 Human reports** | `# charts: on` → `report.md` + SVG charts, drawn on the GPU side, no agent tokens |
+| ✅ | **M4 Human reports** | `# charts: on` → `report.md` + SVG charts, drawn on the GPU side, no agent tokens (PR-13) |
 | ✅ | **M5 Export** | `meet export` → `meet-runs/`, nothing committed |
 | ✅ | **M6 Hardening** | credentials handling, fetch/checkout failures stop the job, actual SHA recorded, reliable delivery, trust model |
 | ✅ | **Rename to MeetProxy** | command `meet`, package `meetproxy`, mailbox branch `meetproxy`: the name no longer ties the project to Colab |
@@ -55,6 +56,7 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 ### 🔜 M7 — quick fixes to the current mailbox flow
 
 Small, safe fixes to what users run today, while stage A is designed.
+*Design: §7 (exact source), §6 (artifacts), §4 (status) · Requirements: PR-06, PR-08, PR-10.*
 
 - [x] Jobs are pinned to the submitted commit (`# commit:` from `meet send`); the branch moving on
       afterwards does not change them; a malformed or missing commit refuses the job; jobs without
@@ -78,13 +80,15 @@ stale evidence), idle vs wall-clock timeouts, expiry observations kept apart fro
 guarantees, bash through Python, a history-free snapshot by `git archive` + manifest, verified
 download, telemetry fields, idempotent release. Every capability ends PASS / FAIL / UNKNOWN.
 Scenario and results: [docs/spikes/colab-cli.md](docs/spikes/colab-cli.md). Fills the capability
-table in DESIGN §9 with facts; nothing unsupported is claimed afterwards.
+table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
+*Design: §12, §4.1, §5.3, §5.4, §18 · Requirements: PR-02, PR-10, PR-07, PR-18.*
 
 ## Stage A — minimal durable contract, local + Colab
 
 ### ⬜ M9 — the contract on the local GPU and on Colab, as thin slices
 
-**A1 · local vertical slice**
+**A1 · local vertical slice** — *Design: §9, §7, §4, §5, §13, §14 · PR-04, PR-06, PR-09, PR-10, PR-07, PR-14, PR-15*
+- [ ] **Quick Run** first: script + profile, nothing more; Simple and Standard telemetry levels.
 - [ ] One local run end to end: `RunSpec` (`runs/<run_id>/spec.json`), attempt directory, minimal
       SQLite journal (logical operations, request generations, per-operation retry policy),
       `git archive` snapshot with manifest, verified artifacts, the four verdicts (execution,
@@ -92,17 +96,20 @@ table in DESIGN §9 with facts; nothing unsupported is claimed afterwards.
 - [ ] Policy gate with scoped approvals, consumed with the intent in one transaction; default mode
       labeled honestly (protects against mistakes, not against the agent).
 
-**A2 · Colab lifecycle** (only capabilities the spike marked PASS)
+**A2 · Colab lifecycle** (only capabilities the spike marked PASS) — *Design: §12, §5.3, §4 · PR-02, PR-07, PR-10*
 - [ ] `colab-cli` adapter: owned sessions, absolute expiry, bounded collection window with an
       approved disposition, early manifest/checkpoints, journaled cleanup obligations.
 - [ ] Disconnect, observe, reconnect without restart, cancel with identity-bound acknowledgement.
-- [ ] The regression scenarios of DESIGN §15 as fault-injection tests.
+- [ ] The regression scenarios of DESIGN §18 as fault-injection tests.
 
-**A3 · benchmark validation**
-- [ ] Measurement schema, synchronized CUDA timing, core-run oracle against declared outputs,
-      interleaved repeats, all samples kept, comparison verdicts.
+**A3 · Benchmark Mode and plans** — *Design: §8, §9, §10, §11 · PR-05, PR-11, PR-21*
+- [ ] Benchmark Mode: measurement schema, synchronized CUDA timing, core-run oracle against declared
+      outputs, interleaved repeats, all samples kept, comparison verdicts.
+- [ ] Plans: one approval for a set of independent runs; two runs concurrently on two approved
+      profiles (local + Colab, or two Colab sessions); hardware comparison never read as a speed-up.
+- [ ] Cost estimate per correct result, sources named, unknowns disclosed; estimate vs actual.
 
-**A4 · profiles and auth** (as needed)
+**A4 · profiles and auth** (as needed) — *Design: §15 · PR-01, PR-03, PR-08, PR-17*
 - [ ] `meet add / use / backends`, `--on`, `meet auth` (keychain; plain file opt-in), read-only
       `meet doctor --json`. Strict-mode broker stays out until needed.
 
@@ -110,11 +117,15 @@ table in DESIGN §9 with facts; nothing unsupported is claimed afterwards.
 
 ### ⬜ M10 — pre-registered pilot, then a small beta
 
+*Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21.*
+
 - [ ] Before the first run: primary metric (manual interventions per correct result), constraints
       (budget, wall time, correctness), success threshold, forced-disconnect scenario.
 - [ ] Same CUDA task (ColorSplit / queens-rect variants), same agent model and prompt, same GPU and
-      budget; several paired runs in randomized order: official Colab skill alone vs MeetProxy;
-      setup and sign-in count as interventions; disconnect tested separately; all failures recorded.
+      budget; several paired runs in randomized order: **official Colab skill alone** and **direct
+      SSH** (where a host is available) vs **MeetProxy**, including one plan with two concurrent
+      independent jobs; time to first run, setup and sign-in count; disconnect tested separately;
+      hardware and price differences reported separately; all failures recorded.
 - [ ] Everything published: protocol, every run, raw data, limitations.
 - [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
 - [ ] On GO: a minimal skill package and install path to a small external beta; collect feedback.
@@ -126,6 +137,8 @@ also show reliable cancellation and recovery and correct results.
 
 ### ⬜ M11 — two more adapters on the same contract (only after GO)
 
+*Design: §12, §16 · Requirements: PR-19, PR-18, PR-02.*
+
 - [ ] `ssh` adapter on one Linux host (borrowed sessions, never released by us).
 - [ ] The git mailbox behind the adapter contract (for sandboxes that reach only GitHub), with
       migration tests from today's flow; per-job cancel, job claiming, logs that do not bloat
@@ -134,6 +147,8 @@ also show reliable cancellation and recovery and correct results.
 ## Stage D — packaging and release
 
 ### ⬜ M12 — the skill, where it is tested
+
+*Design: §15, §16 · Requirements: PR-01, PR-17, PR-18, PR-16.*
 
 - [ ] One `SKILL.md` plus thin manifests: Claude Code (skill / plugin), Codex
       (`.agents/skills`, `agents/openai.yaml`).
@@ -145,15 +160,20 @@ also show reliable cancellation and recovery and correct results.
 
 ### ⬜ M13 — only when users ask
 
+*Design: §12, §19 · Requirements: PR-19, PR-18.*
+
 - RunPod / Vast.ai / Lambda provisioning through their CLIs or APIs.
+- Slurm / Kubernetes / MLflow integrations.
 - Colab API adapter, when access is granted.
 - Hosted MCP server for chat without a shell (own auth, tenancy and billing model, own security
   review).
-- Several GPUs per run; container isolation on SSH hosts.
+- Container isolation on SSH hosts.
 
 ## Pro
 
-### ⬜ M14 — CUDA profiling
+### ⬜ M14 — CUDA profiling (Deep telemetry)
+
+*Design: §9 · Requirements: PR-14, PR-05.*
 
 Nsight Compute on request: kernel duration, occupancy, L2 hit rate, branch divergence, DRAM
 throughput, IPC — what GPU utilization cannot show. Comparison reports across variants.
