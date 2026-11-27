@@ -78,8 +78,9 @@ Small, safe fixes to what users run today, while stage A is designed.
 
 *Design: §17, §18 · Requirements: PR-26, PR-20, PR-22.*
 
-- [ ] Recruit 5 people from the initial segment (repeated CUDA experimenters with their own Colab /
-      lab server / local GPU) — CUDA, research and coding-agent communities.
+- [ ] Recruit 5 people from the initial segment who use a **local NVIDIA GPU and/or Colab** (the
+      first beta's resources; lab-server users wait for SSH after GO) — CUDA, research and
+      coding-agent communities.
 - [ ] Observe their real GPU workflow; then let them try a small campaign with today's tool.
 - [ ] Record, opt-in: time to first run, manual interventions, objections (PRODUCT §7), whether they
       repeat it within a week.
@@ -123,10 +124,15 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
       outputs, interleaved repeats, all samples kept, comparison verdicts.
 - [ ] Plans: one approval for a set of independent runs; two runs concurrently on two approved
       profiles (local + Colab, or two Colab sessions); hardware comparison never read as a speed-up.
+- [ ] **Screen on many GPUs, decide on one:** within-device speed-ups for screening; finalists and
+      baseline re-run on one reference GPU for the decision; per-GPU winners or `INSUFFICIENT_DATA`
+      otherwise; a three-GPU test refuses a global ranking.
+- [ ] Oracle from the project's existing tests where possible; no oracle → no verified-winner claim.
 - [ ] **Campaigns:** objective, baseline, oracle, resource envelope, rounds, stop conditions; the
       agent proposes variants, the core records and enforces; best verified result with evidence.
-- [ ] **Experiment memory:** hypotheses, variant lineage, verdicts, rejection reasons; facts apart
-      from agent interpretations; `meet memory search`.
+- [ ] **Experiment memory:** structured hypothesis identities, lineage, workload and hardware
+      context, verdicts, rejection reasons; likely duplicates surfaced as suggestions (retest allowed
+      with a changed context or a reason); facts apart from agent interpretations; `meet memory search`.
 - [ ] Cost per correct result (compute + agent tokens where reported), sources named, unknowns
       disclosed; estimate vs actual.
 
@@ -140,18 +146,21 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
 
 *Design: §17, §18 · Requirements: PR-20, PR-11, PR-12, PR-17, PR-21, PR-22, PR-26.*
 
-- [ ] Before the first run: primary metric (manual interventions per correct result), constraints
-      (budget, wall time, correctness), success threshold, forced-disconnect scenario.
+- [ ] Before the first run: primary metric (**best verified improvement at a fixed budget and
+      time**), constraints (correctness never worse; manual interventions as an absolute count with a
+      near-zero-baseline fallback), success threshold, forced-disconnect scenario.
 - [ ] Same CUDA task (ColorSplit / queens-rect variants), same agent model and prompt, same GPU and
-      budget; several paired runs in randomized order: **official Colab skill alone** and **direct
-      SSH** (where a host is available) vs **MeetProxy**, including one plan with two concurrent
-      independent jobs; time to first run, setup and sign-in count; disconnect tested separately;
+      budget; several paired runs in randomized order: **official Colab skill alone**, **direct
+      SSH** (where a host is available) and **SkyPilot** (wherever it supports the same resource and
+      task; comparison only, no integration) vs **MeetProxy**; supported and unsupported cases
+      reported separately; time to first run, setup and sign-in count; disconnect tested separately;
       hardware and price differences reported separately; all failures recorded.
 - [ ] Everything published: protocol, every run, raw data, limitations.
 - [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
 - [ ] The pilot task is a **campaign** (PRODUCT §5), so the comparison measures the promise, not a
       single job.
-- [ ] On GO: a minimal skill package and install path to a small external beta (target 20 users);
+- [ ] On GO: a minimal skill package and install path to a small external beta on **local GPU +
+      Colab** (target 20 users; the advertised campaign must work on their resources);
       measure, opt-in, activation and repeat use at 7 and 30 days.
 
 **Gate:** only **GO** unlocks new backends — publishing the pilot is not enough. Local + Colab must

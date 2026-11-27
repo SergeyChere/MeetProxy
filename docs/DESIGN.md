@@ -4,7 +4,7 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.4). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.5). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
@@ -13,7 +13,9 @@ execution / delivery / correctness / comparison verdicts, a GO / ITERATE / STOP 
 new adapters); v2.3 derives the design from PRODUCT.md and adds Quick Run / Benchmark modes,
 telemetry levels, parallel independent jobs under one plan, and cost estimates; v2.4 follows
 PRODUCT rev. 2 (campaigns and experiment memory, agent cost, overhead budget, portable definitions,
-consented adoption metrics). The contract is agreed **before** production code
+consented adoption metrics); v2.5 follows PRODUCT rev. 3 (screen on many GPUs, decide on one;
+memory suggests instead of banning; oracle reuse; first beta on local GPU + Colab; outcome-based
+pilot metric with SkyPilot as a comparison arm). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
@@ -398,6 +400,10 @@ Required for any "faster / slower" claim.
   better), variant, repeat, value, valid`. Comparisons only between identical metric, unit and phase.
 - **CUDA timing** synchronizes the measured region (events or explicit synchronize); the measured
   phase is declared (e.g. kernel only, end-to-end).
+- **Oracle sources, in order of preference:** the project's existing unit / regression tests, a
+  reference implementation, recorded fixtures, known exact results; writing a new oracle is the last
+  resort and its preparation time is recorded (PR-17). Without an adequate oracle a run can be
+  executed and timed, but correctness is `NOT_CHECKED` and **no verified winner is claimed**.
 - **Correctness oracle** fixed independently of the candidate, its digest stored in the RunSpec; the
   check is run by **core-controlled code** against the job's declared outputs (not by the job
   itself); a changed oracle is detected and the comparison refused. A wrong output is rejected even
@@ -465,6 +471,12 @@ Nothing is acquired and nothing runs until the user asks (PR-04): there is no re
 - **Comparison inside a plan** follows §8: only runs with compatible environment fingerprints are
   compared for speed; runs on different GPU types are reported side by side as a hardware
   comparison, never as an algorithm speed-up.
+- **Screen on many GPUs, decide on one.** Heterogeneous GPUs are used for *screening* (each variant
+  compared with the baseline **on the same device**: a within-device speed-up, plus correctness).
+  The finalists and the baseline are then re-run as a **matched final benchmark on one reference
+  GPU**, and only that benchmark names the winner. If no common GPU is available, the result is a
+  **winner per GPU type**, or `INSUFFICIENT_DATA`. A test with three GPU types must refuse a global
+  ranking from mixed hardware.
 - **Out of scope:** distributed training, collective communication, automatic partitioning of a
   single workload across machines.
 
@@ -482,7 +494,8 @@ A campaign is the product's unit of value (PRODUCT §5): a sequence of plans aim
 | resource envelope | approved profiles, concurrency, time and budget limits (one approval, §5.2) |
 | stop conditions | target reached, envelope exhausted, N rounds without improvement, user stop |
 | rounds | each round is a plan (§10.1) of independent variants |
-| result | best verified variant, its evidence, and every rejected variant with its reason |
+| reference GPU | the profile on which finalists and baseline are re-run for the decision (§10.1) |
+| result | best verified variant from the matched final benchmark (or per-GPU winners / insufficient evidence), its evidence, every rejected variant with its reason, and the verified improvement per dollar and per hour — zero if nothing improved |
 
 - **The agent reasons, the core records and enforces.** The agent proposes the next variants; the
   core checks each new plan against the envelope, runs it, applies the oracle and the comparison
@@ -494,9 +507,15 @@ A campaign is the product's unit of value (PRODUCT §5): a sequence of plans aim
 
 *Serves PR-23, PR-16.*
 
-- Per project, in the run store: each **hypothesis** (ID, short statement, author: user or agent),
-  its **variants** with lineage (parent variant, commit, diff summary, configuration), the runs that
-  tested them, their verdicts, and the **rejection reason** when rejected.
+- Per project, in the run store: each **hypothesis** with a **structured identity** — change kind
+  (e.g. tiling, memory layout, launch configuration, precision), target (kernel / function), key
+  parameters — plus a short statement and its author (user or agent); its **variants** with lineage
+  (parent variant, commit, diff summary, configuration); the **context** of every test (workload /
+  input size, GPU model, driver, CUDA); the runs, their verdicts, and the **rejection reason**.
+- **Suggestions, not bans.** Before a new plan the core surfaces likely duplicates (same structured
+  identity, or similar statement) with their evidence and context. A retest is allowed when the
+  context differs (another GPU, input, toolchain) or the agent states a reason; combinations of
+  earlier changes are new hypotheses with both parents in their lineage.
 - **Facts and interpretations are kept apart:** measured values and verdicts (written by the core)
   are separate from explanations (written by the agent, labeled as such).
 - **Searchable** by the agent through the CLI (`meet memory search kernel tiling`): compact answers,
@@ -630,13 +649,15 @@ install, auth and cancellation, each backed by a smoke test.
 
 An exploratory pilot, not a statistical proof — and planned before it is run:
 
-1. **Pre-registered** before the first run: primary metric (proposal: manual interventions per
-   correct result), constraints (same budget and wall-time cap, correctness required), the success
-   threshold, and the forced-disconnect scenario.
-2. **Same task, same conditions:** one real CUDA experiment (ColorSplit / queens-rect variants), the
-   same agent model and version, the same prompt, the same GPU type and budget — **official Colab
-   skill alone** and **direct SSH** (where a host is available) vs **MeetProxy**, including one plan
-   with two independent jobs running concurrently on two approved profiles (§10).
+1. **Pre-registered** before the first run: primary metric — **best verified improvement at a fixed
+   budget and time** (PRODUCT §9) —, constraints (correctness never worse; manual interventions as an
+   absolute count, with a fallback rule when a baseline is already near zero), the success threshold,
+   and the forced-disconnect scenario.
+2. **Same task, same conditions:** the smallest campaign of PRODUCT §5 on a real CUDA project
+   (ColorSplit / queens-rect variants), the same agent model and version, the same prompt, the same
+   GPU types, budget and wall-time cap. Arms: **official Colab skill alone**, **direct SSH** (where a
+   host is available), **SkyPilot** wherever it supports the same resource and task, and
+   **MeetProxy**. Supported and unsupported cases are reported separately.
 3. **Several paired runs** in **randomized order**, not one session each. Time to first run,
    setup and sign-in steps count (as time and as manual interventions); hardware and price
    differences across providers are reported separately; the forced-disconnect test is run separately from the main
@@ -663,8 +684,8 @@ machine by default.
 | **0. Design partners** (in parallel with everything below) | 5 people from the initial segment (PRODUCT §3) observed in their real workflow and trying a campaign with today's tool; interventions, objections and repeat use recorded (opt-in, §17). |
 | **0. Spike: Colab CLI lifecycle** | On a real session: identity, start, disconnect, observe, reconnect, cancel, session discovery, provider-side expiry and release are tried; commands, CLI version, results and limits are published ([docs/spikes/colab-cli.md](spikes/colab-cli.md)); the capability table (section 12) is filled with facts. Nothing unsupported is claimed. |
 | **A1. Local vertical slice** | One local **Quick Run** end to end (§9): immutable RunSpec with requirements block, minimal journal, verified artifacts, execution and delivery verdicts, Simple and Standard telemetry, overhead measured (§9.1). |
-| **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. |
-| **A3. Benchmark Mode, plans, campaigns** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10.1); a campaign with rounds and stop conditions (§10.2) and experiment memory (§10.3); compute and agent cost (§11). |
+| **A2. Colab lifecycle** | The same on Colab, using only capabilities the spike marked PASS: disconnect, observe, cancel, bounded expiry, cleanup. With A1 this gives the first beta's two profiles: local GPU + Colab. |
+| **A3. Benchmark Mode, plans, campaigns** | Measurement schema, core-run oracle, interleaved repeats, comparison verdicts (§8); a plan with two independent concurrent runs on two approved profiles (§10.1); a campaign with rounds and stop conditions (§10.2), screening on several GPUs with a matched final benchmark on one reference GPU (§10.1), and experiment memory with duplicate suggestions (§10.3); compute and agent cost (§11). |
 | **A4. Profiles and auth** (as needed) | `meet add / use / backends`, `meet auth`; strict-mode broker and provider token framework stay out until needed. |
 | **B. Proof of value** | The pre-registered pilot of section 17 (vs the official Colab skill and direct SSH, including a parallel plan) ends in **GO**; a minimal skill package and install path go to a small external beta; time to first run measured. |
 | **C. SSH + mailbox** | Only after GO: SSH on one Linux host; the mailbox behind the adapter contract, migration versioned separately. |

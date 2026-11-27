@@ -22,7 +22,7 @@ A change starts here and flows down: a new or changed requirement first, then th
 it, then the milestone that builds it. A test keeps the links intact (every `PR-NN` is designed and
 planned, every `§N` exists).
 
-Status: 27 Nov 2026 (rev. 2, after the product review). Everything here is a **hypothesis to
+Status: 27 Nov 2026 (rev. 3, after the second product review — refinements only, no new requirements). Everything here is a **hypothesis to
 validate**, not shipped behaviour or customer research. Savings are claimed only after they are
 measured (PR-20).
 
@@ -53,7 +53,7 @@ week later, a session kept billing overnight.
 |---|---|
 | Who | independent researchers and developers optimizing CUDA / PyTorch code |
 | Frequency | several experiment sessions a week, many variants each |
-| GPU access they already have | a Colab subscription, a lab or own server over SSH, a local NVIDIA card |
+| GPU access they already have | **first beta:** a local NVIDIA card and/or a Colab subscription · later (after GO): a lab or own server over SSH |
 | Current workflow | an agent (Claude Code, Codex) writes code; the human runs it on the GPU and reports back |
 | Switching trigger | a campaign of variants that is too tedious, error-prone or slow to babysit by hand |
 
@@ -70,7 +70,7 @@ comparison.
 |---|---|---|
 | **Official Colab CLI + skill** | Colab runtimes, exec, files, SSH, an agent skill | campaigns with correctness, exact source, recovery, memory |
 | **Agent + direct SSH** | any Linux host | durable status across disconnects, exact source, verified results |
-| **SkyPilot agent skill** | an official agent skill (Claude Code plugin) over 25+ clouds, Kubernetes and Slurm; has shown autoresearch running in parallel on 16 GPUs | not competed with on breadth; MeetProxy targets resources it does not cover (Colab subscriptions, single lab servers, a local card) and the evidence contract. *Not integrated for now.* |
+| **SkyPilot agent skill** | an official agent skill (Claude Code plugin) over 25+ clouds, Kubernetes and Slurm, also existing machines; has shown autoresearch running in parallel on 16 GPUs | strong overlap — not competed with on breadth. Possible edge, to be proven: Colab subscriptions, lower setup friction, the evidence contract (exact source, oracle, matched comparison, memory). **Compared directly in the pilot wherever it supports the same resource and task; not integrated.** |
 | **RunPod agent plugin** | official skills + MCP for Claude Code, Codex and ChatGPT | provider-specific; MeetProxy is about campaigns across the user's existing GPUs |
 | **Modal auto-research skills** | research-agent skills on Modal GPUs | provider-specific; same as above |
 | **Karpathy autoresearch** | the "try, compare, keep or discard" loop on one GPU with one metric | the same loop with correctness checks, exact source, several GPUs and a durable record |
@@ -82,7 +82,7 @@ segment's campaigns, it does not grow (PR-20).
 
 ## 5. Target workflow: an experiment campaign
 
-> *"Find the fastest correct implementation of my CUDA kernel. Use my Colab and the lab server.
+> *"Find the fastest correct implementation of my CUDA kernel. Use my local GPU and my Colab.
 > Budget: $10 and two hours."*
 
 1. The agent states the campaign: objective metric, baseline, correctness oracle, the approved
@@ -91,28 +91,38 @@ segment's campaigns, it does not grow (PR-20).
 3. The user approves the campaign once (PR-07).
 4. Independent variants run concurrently on the approved GPUs (PR-11).
 5. Incorrect outputs are rejected whatever their speed; timings are compared only within compatible
-   environments (PR-05).
+   environments (PR-05). **Different GPUs screen, one GPU decides:** variants may be screened on
+   several GPU types, but finalists and the baseline are re-run on one reference GPU, and only that
+   matched benchmark names the winner. Without a common GPU the result is a winner per GPU type, or
+   "insufficient evidence" — never a global ranking from mixed hardware.
 6. The agent proposes the next variants from the results, inside the approved limits; the core
    records each hypothesis, its lineage and outcome (PR-22, PR-23).
 7. On a stop condition: results verified, owned sessions released (PR-07, PR-10).
 8. The user gets the best verified variant, the evidence, what was rejected and why, and the total
-   cost — compute and agent tokens, actual where known (PR-25).
+   cost — compute and agent tokens, actual where known (PR-25). A campaign that finds no improvement
+   says so.
+
+**The smallest campaign that tests the promise** (the first beta's scope): one CUDA project with an
+existing correctness check, a baseline and 3–5 variants, two GPU profiles (local + Colab, or two
+Colab sessions), one approval, one round of screening and one matched final benchmark, memory of
+what was tried, verified results and released sessions.
 
 The everyday case stays simple: *"run this on my GPU"* → it runs, the exact commit, one line of
 result (PR-04).
 
 ## 6. Requirements
 
-Priority is for the **first beta** of the initial segment: **Must** (without it the promise fails),
-**Should** (weakens the promise if missing), **Could** (later, on evidence).
+Priority is for the **first beta** — the smallest campaign above, on local GPU + Colab: **Must**
+(without it that campaign fails or is unsafe), **Should** (weakens it if missing), **Could** (later, on
+evidence). The list is closed for now: new needs come from design partners, not from more analysis.
 
 | ID | Requirement | Priority | How we will know |
 |---|---|---|---|
-| **PR-01** | **One entry point.** A natural-language skill (`/meetproxy`, `$meetproxy`); a CLI for agents and power users. No commands to memorize for the human. | Must | a first-time user gets a result without reading CLI docs |
+| **PR-01** | **One entry point.** A natural-language skill (`/meetproxy`, `$meetproxy`); a CLI for agents and power users. No commands to memorize for the human. | Should | a first-time user gets a result without reading CLI docs |
 | **PR-02** | **Official tools underneath.** Use provider CLIs and sign-ins; never re-implement vendor auth or transport; install adapters only with consent. | Must | no own auth for Colab/SSH; adapter install asks first |
 | **PR-03** | **The user chooses the GPU.** Named profiles; no implicit provider or destination switch; the backend is shown on every result. | Must | contract tests: no run on an unapproved profile |
 | **PR-04** | **Quick Run.** "Run this on a GPU" with minimal metadata, keeping safety and exact source. | Should | quick run needs only the script and a profile |
-| **PR-05** | **Benchmark Mode.** Correctness oracle, repeats, compatible environments only; incorrect outputs never "win". | Must | an incorrect fast variant is rejected |
+| **PR-05** | **Benchmark Mode.** Correctness oracle — reusing the project's existing tests, reference implementations, fixtures or known exact results where possible —, repeats, compatible environments only; heterogeneous GPUs screen, a matched benchmark on one reference GPU decides; incorrect outputs never "win"; no adequate oracle → no verified-winner claim. | Must | an incorrect fast variant is rejected |
 | **PR-06** | **Exact source.** Every job runs the commit it was submitted with, or does not run. | Must | branch moved after submit → submitted commit runs |
 | **PR-07** | **Paid compute is safe by default.** Default deny, scoped approvals, time limits, bounded session hold, estimates; best-effort vs hard limits disclosed; no monetary cap promised without provider enforcement. | Must | no paid acquire without approval; no unbounded hold |
 | **PR-08** | **No new credential burden.** Reuse official sign-ins; other tokens in the OS keychain; never in chat, config or repo; minimal job environment; same-user limits documented. | Must | tokens never appear in chat or files |
@@ -122,20 +132,20 @@ Priority is for the **first beta** of the initial segment: **Must** (without it 
 | **PR-12** | **Few tokens.** Compact structured verdicts and bounded log excerpts; raw evidence on request. | Should | measured token use vs direct workflows |
 | **PR-13** | **Results people can read.** Optional reports and charts made outside the agent's context. | Could | reports cost the agent no tokens |
 | **PR-14** | **Telemetry levels.** Simple · Standard · Deep (opt-in). | Should | quick runs default to Simple or Standard |
-| **PR-15** | **Works with existing projects unchanged.** | Must | a representative existing repo runs as is |
-| **PR-16** | **No lock-in.** MIT, open protocol, portable CSV/JSON, configurable retention, no mandatory hosted service. | Must | everything exports; no MeetProxy server needed |
-| **PR-17** | **Minutes to first run.** Read-only discovery; ask only for what is missing. | Must | time to first useful run measured (target in section 9) |
+| **PR-15** | **Works with existing projects unchanged.** | Should | a representative existing repo runs as is |
+| **PR-16** | **No lock-in.** MIT, open protocol, portable CSV/JSON, configurable retention, no mandatory hosted service. | Should | everything exports; no MeetProxy server needed |
+| **PR-17** | **Minutes to first run.** Read-only discovery; ask only for what is missing. **First run** and **first verified experiment** are measured separately; oracle preparation time is reported, not hidden. | Must | both times measured (targets in section 9) |
 | **PR-18** | **Honest support.** Supported means tested; support matrix with smoke tests; unsupported is explicit. | Must | every listed host/backend has a passing smoke test |
 | **PR-19** | **Integrate, don't replace.** SSH and open export first; Slurm/Kubernetes/MLflow integrations only on demand; interactive work handed to provider sessions. | Could | export works into existing tools |
-| **PR-20** | **Evidence before claims.** Benefits claimed only after a pre-registered comparison with the official Colab skill and direct SSH (and an autoresearch-style manual loop where relevant), all runs published. | Must | pilot published; decision GO / ITERATE / STOP |
+| **PR-20** | **Evidence before claims.** Benefits claimed only after a pre-registered comparison with the official Colab skill, direct SSH and SkyPilot wherever it supports the same resource and task (and an autoresearch-style loop where relevant); supported and unsupported cases reported separately; all runs published. | Must | pilot published; decision GO / ITERATE / STOP |
 | **PR-21** | **Compute cost per correct result.** Start-up, idle, failures and billing units included; unknowns disclosed; actual spend where available. | Should | estimate vs actual reported per plan |
 | **PR-22** | **Experiment campaigns.** Objective, baseline, oracle, approved resource envelope, variants, stop conditions, final evidence — a first-class object. The agent reasons; the core records and enforces. | Must | a campaign ends with a best verified result and its evidence |
-| **PR-23** | **Experiment memory.** Per project: hypotheses, variant lineage, configuration, results, rejection reasons, evidence; searchable; measured facts kept apart from agent interpretations. | Must | a new agent session avoids re-running a rejected idea |
+| **PR-23** | **Experiment memory.** Per project: structured hypothesis identities, variant lineage, workload and hardware context, results, rejection reasons, evidence; likely duplicates surfaced as **suggestions, not bans** (justified retests and new combinations allowed); measured facts kept apart from agent interpretations. | Must | a new session finds a rephrased prior hypothesis and its evidence; a changed GPU or input allows an explicit retest |
 | **PR-24** | **Resource recommendations.** Suggest which approved profile fits a run (capability, availability, estimated cost per correct result); new profiles only with approval. | Could | the suggested profile is approved before use |
 | **PR-25** | **Total cost includes the agent.** Agent tokens and model cost (where the host reports them) next to GPU billing, storage and failed attempts; unknown parts marked. | Should | campaign report shows compute and agent cost |
 | **PR-26** | **Adoption and retention are measured — with consent.** Time to first run, activation, repeat use at 7 and 30 days, reasons for leaving; opt-in, no data leaves the machine without it. | Should | design-partner and beta metrics reported with sample sizes |
-| **PR-27** | **Low overhead.** Cold-start (staging, transfer) and steady-state overhead measured separately against direct execution; Quick Run stays fast. | Must | overhead within the target in section 9 |
-| **PR-28** | **Portable experiment definitions.** A campaign or run states its requirements (GPU capability, dependencies, data); moving it to another backend validates them first. | Should | a run moved between profiles is validated or refused before transfer |
+| **PR-27** | **Low overhead.** Cold-start (staging, transfer) and steady-state overhead measured separately against direct execution; Quick Run stays fast. | Should | overhead within the target in section 9 |
+| **PR-28** | **Portable experiment definitions.** A campaign or run states its requirements (GPU capability, dependencies, data); moving it to another backend validates them first. | Could | a run moved between profiles is validated or refused before transfer |
 | **PR-29** | **Extensible backends.** A documented backend contract with capability declarations and contract tests, so others can add one. | Could | an external backend passes the contract tests |
 
 ## 7. Objections
@@ -145,7 +155,7 @@ evidence**: each objection is *unvalidated* until its behavioural check passes w
 
 | # | Objection | Answered by | Behavioural check | Status |
 |---|---|---|---|---|
-| 01 | Google already has a Colab skill. | PR-22, PR-23, PR-20 | partners prefer MeetProxy over the official skill for a campaign | unvalidated |
+| 01 | Google already has a Colab skill. | PR-22, PR-23, PR-20 | a better verified result at the same budget than the official skill; partners prefer it | unvalidated |
 | 02 | My agent already uses SSH. | PR-06, PR-10, PR-22 | fewer interventions than direct SSH on the same campaign | unvalidated |
 | 03 | Setup is too complicated. | PR-17 | first useful run within target | unvalidated |
 | 04 | I rarely need a GPU. | PR-04 | — (not the initial segment) | out of segment |
@@ -170,7 +180,7 @@ evidence**: each objection is *unvalidated* until its behavioural check passes w
 | 23 | Claude can just write a script for me. | PR-06, PR-10, PR-05, PR-22 | fewer debugging interventions than an ad hoc script | unvalidated |
 | 24 | There is no convincing advantage. | PR-20 | pilot ends in GO | unvalidated |
 | 25 | Setup costs more than the benefit. | PR-17, PR-26 | break-even reported from partner data | unvalidated |
-| 26 | SkyPilot already gives agents GPUs everywhere. | PR-22, PR-23 | partners with Colab / lab servers choose MeetProxy for campaigns | unvalidated |
+| 26 | SkyPilot already gives agents GPUs everywhere. | PR-22, PR-23, PR-20 | a better verified result at the same budget than SkyPilot where both support the resource | unvalidated |
 
 ## 8. Differentiators to prove
 
@@ -178,7 +188,7 @@ evidence**: each objection is *unvalidated* until its behavioural check passes w
 |---|---|---|
 | **Evidence-backed campaigns** (lead) | a best *correct* result with evidence (PR-22, PR-05) | the agent reasons, the core records |
 | **Experiment memory** | rejected ideas are not retried blindly (PR-23) | facts apart from interpretations |
-| Resources the user already has | Colab subscription, lab server, local card in one campaign (PR-11, PR-03) | only tested backends (PR-18) |
+| Resources the user already has | local card and Colab subscription in one campaign (lab servers after GO) (PR-11, PR-03) | only tested backends (PR-18) |
 | Fault recovery | reattach, keep partial results (PR-10) | resume only via an explicit checkpoint contract |
 | Total cost per correct result | compute + agent (PR-21, PR-25) | unknowns disclosed |
 | Hardware comparison | throughput, memory, cost across GPU types (PR-05) | never read as an algorithm speed-up |
@@ -192,13 +202,16 @@ the pilot, and targets are recalibrated with pilot data.
 
 | Metric | Starting target | Definition notes |
 |---|---|---|
-| Manual interventions per correct result (**primary**) | −80% vs matched baselines | approvals and recovery actions counted the same way in every arm |
+| **Best verified improvement at a fixed budget and time** (**primary**) | better than every matched baseline | same task, oracle, budget and wall-time cap in every arm; a campaign with no improvement reports zero |
+| Verified improvement per dollar and per hour | reported | failed attempts and agent cost included |
 | Correctness | never worse than baselines | constraint, not a trade-off |
-| First useful run | ≤ 3 min (warm), cold reported separately | provider waiting time reported separately |
+| Manual interventions per campaign | absolute count, ≤ the lowest baseline | pre-registered counting rules (approvals, recoveries); if a baseline is already near zero, this is a constraint, not the goal |
+| First run | ≤ 3 min (warm), cold reported separately | provider waiting time reported separately |
+| First verified experiment | reported, with oracle preparation time | existing tests reused where possible |
 | Agent tokens per campaign | −30% | same model, task and correctness gate |
 | Steady-state overhead | ≤ 5% vs direct execution | staging and transfer reported separately |
-| Design partners | 5 before stage A is complete | matching the initial segment |
-| External beta | 20 users | matching the initial segment |
+| Design partners | 5 before stage A is complete | local GPU and/or Colab users of the initial segment |
+| External beta | 20 users | the advertised campaign works on their supported resources |
 | 30-day repeat use | ≥ 40% of activated users | sample size reported |
 
 **Decision:** GO / ITERATE / STOP on the pre-registered primary metric and constraints;
@@ -206,7 +219,8 @@ publishing results alone unlocks nothing.
 
 ## 10. Reaching users
 
-- **Design partners now** (before more infrastructure): 5 people from the initial segment. Watch
+- **Design partners now** (before more infrastructure): 5 people from the initial segment who use a
+  local GPU and/or Colab — never recruited into workflows the beta does not support. Watch
   their real GPU workflow, then let them try a campaign with today's tool; record interventions,
   objections and whether they repeat it.
 - **Acquisition:** a real ColorSplit campaign written up with raw data, a short demo, the free
