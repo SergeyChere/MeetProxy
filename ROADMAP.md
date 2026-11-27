@@ -8,12 +8,11 @@ flowchart LR
     D["✅ Done<br/>M0–M5<br/>telemetry · skill · docs<br/>history · reports · export<br/>tests + CI"]
     F["🛡️ Harden<br/>M6–M8<br/>hardening · reliability<br/>job lifecycle"]
     P["🔬 Prove it<br/>M9–M10<br/>real GPU check<br/>real demo case"]
-    A["⚙️ Automate<br/>M11–M12<br/>idle release<br/>Colab API"]
-    R["🚀 Release<br/>M13"]
-    W["🌍 Widen<br/>M14–M16<br/>multi-GPU<br/>any Linux GPU"]
+    A["🧩 Skill first, any GPU<br/>M11–M13<br/>core split · Colab CLI<br/>one skill · release"]
+    R["🌍 More GPUs<br/>M14–M16<br/>SSH · rented · chat MCP<br/>Colab API"]
     PRO["💎 Pro<br/>M17–M19<br/>measurement method<br/>CUDA profiling"]
     V1["1.0<br/>M20"]
-    D --> F --> P --> A --> R --> W --> PRO --> V1
+    D --> F --> P --> A --> R --> PRO --> V1
 
     classDef done fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
     classDef fix fill:#fdeeee,stroke:#d64545,stroke-width:2px,color:#5a1d1d
@@ -26,7 +25,7 @@ flowchart LR
     class P prove
     class A auto
     class R rel
-    class W,PRO,V1 later
+    class PRO,V1 later
 ```
 
 Legend: ✅ done · 🔜 next · ⬜ planned.
@@ -82,41 +81,49 @@ An agent tries ~10 variants of a CUDA kernel (ColorSplit / queens-rect): checks 
 measures, drops the slow and wrong ones, keeps the best. Its real `report.md` and `history.md`
 replace the made-up example in the README.
 
-## Automate
+## Skill first, any GPU
 
-### ⬜ M11 — Release the runtime when idle (opt-in)
+Direction from 27 Nov 2026: the product is the skill (`/meetproxy`), and it works on whatever GPU
+the user has. Design: [docs/DESIGN.md](docs/DESIGN.md).
 
-`google.colab.runtime.unassign()` after N idle minutes, so compute units are not burnt while
-nobody uses the GPU. Off by default: today that decision is the human's.
+### ⬜ M11 — Core split
 
-### ⬜ M12 — Colab API: no notebook, no button
+- [ ] `meet-wrap.py`: the job runner as one dependency-free file that runs on any GPU machine
+      (process group, timeout, secret masking, GPU sampling, `.done`).
+- [ ] Driver interface (`probe / acquire / put / exec / fetch / release`).
+- [ ] `local` driver (the agent's own GPU) and today's flow as the `git-mailbox` driver.
+- [ ] Results in `.meetproxy/runs/<job>/` for every backend; optional git sync.
 
-The Colab API (beta, by allowlist): `create_runtime` with the GPU a job asks for, start the runner
-with `execute_code`, `delete_runtime` when the queue is empty, `get_subscription` for the
-compute-unit balance. Colab Enterprise already offers the same through `gcloud colab runtimes`.
+### ⬜ M12 — Colab through the official Colab CLI
 
-## Release
+- [ ] `colab-cli` driver: `colab new / upload / exec / download / stop`.
+- [ ] Exact commit on the VM via `git bundle`.
+- [ ] `meet doctor`: finds a working backend, tells the human the one step left.
+- [ ] Release policy (idle minutes), never implicit for paid GPUs.
 
-### ⬜ M13 — Publish the free skill
+### ⬜ M13 — One skill for every agent, and release
 
-On skill marketplaces, after M6–M10.
+- [ ] Skill rewritten around `meet doctor`; details in `references/`.
+- [ ] `scripts/bootstrap.sh` installs a pinned `meet`.
+- [ ] Packages: Claude (skills / plugin), Codex and ChatGPT (`.agents/skills`,
+      `agents/openai.yaml`, plugin).
+- [ ] Publish the free skill on skill marketplaces.
 
-## Widen
+### ⬜ M14 — SSH and rented GPUs
 
-### ⬜ M14 — 0.7: several GPUs
+- [ ] `ssh` driver and `meet add-host`: any Linux machine with an NVIDIA GPU (own, university,
+      RunPod, Vast.ai, Lambda), also `colab ssh`.
+- [ ] Provisioning through provider CLIs where they exist; ask before paid GPUs.
+- [ ] Several GPUs: one queue, a telemetry summary per GPU.
 
-Several runners on one queue; telemetry summary for every GPU, not only the first.
+### ⬜ M15 — Chat without a shell
 
-### ⬜ M15 — Check other platforms
+A hosted MCP server with the same contract, for ChatGPT / Claude chat that has no terminal. Needs
+its own security review before it exists.
 
-Kaggle, Lightning AI, Paperspace, SageMaker Studio Lab, RunPod, Vast.ai, Lambda, AWS/GCP: terms
-of use (is remote control allowed, free-tier limits), outbound GitHub access, where to keep the
-token, session lifetime. Result: a table and the order to support them.
+### ⬜ M16 — Colab API
 
-### ⬜ M16 — 0.9: a runner for any Linux machine with an NVIDIA GPU
-
-Rented GPUs and your own server: the runner as a service, token from the environment, AMD
-(`rocm-smi`) if needed.
+`colab-api` driver (`create_runtime`, `execute_code`, `delete_runtime`) when access is granted.
 
 ## Pro
 
