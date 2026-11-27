@@ -48,18 +48,25 @@ def test_job_environment_has_no_credentials(rn, monkeypatch):
     assert "HF_TOKEN=" in env
 
 
-def test_secrets_are_masked_in_pushed_files(rn, monkeypatch, world):
+def test_files_with_secrets_are_withheld_not_rewritten(rn, monkeypatch, world):
     monkeypatch.setenv("MY_API_KEY", "abcdefgh123456")
     rn.secrets = R.secrets()
     rn.mb.secrets = rn.secrets
     open(rn.mb.p("cmd", "f.sh"), "w").write(
-        "echo key=$MY_API_KEY > $MEET_OUT/results.csv\n"
+        "echo ok,1 > $MEET_OUT/results.csv\n"
+        "echo key=$MY_API_KEY > $MEET_OUT/env.txt\n"
         "mkdir -p $MEET_OUT/sub && printf 'x\\0abcdefgh123456' > $MEET_OUT/sub/blob.bin\n")
     rn.run_job("f")
-    assert git(world.gh, "show", "meetproxy:out/f/results.csv") == "key=***"
-    blob = subprocess.run(["git", "-C", str(world.gh), "show", "meetproxy:out/f/sub/blob.bin"],
-                          capture_output=True).stdout
-    assert b"abcdefgh123456" not in blob and b"***" in blob
+    assert git(world.gh, "show", "meetproxy:out/f/results.csv") == "ok,1"
+    for f in ("env.txt", "sub/blob.bin"):
+        r = subprocess.run(["git", "-C", str(world.gh), "show", f"meetproxy:out/f/{f}"],
+                           capture_output=True)
+        assert r.returncode != 0                       # never pushed
+    history = subprocess.run(["git", "-C", str(world.gh), "log", "-p", "--all"],
+                             capture_output=True).stdout
+    assert b"abcdefgh123456" not in history
+    d = json.loads(git(world.gh, "show", "meetproxy:out/f.done"))
+    assert d["withheld"] == ["f/env.txt", "f/sub/blob.bin"]
 
 
 def test_colab_start_keeps_the_token_out_of_urls(monkeypatch, no_gpu):

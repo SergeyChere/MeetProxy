@@ -3,7 +3,7 @@
 # Usage (from the project root): bash <skill-dir>/scripts/setup.sh
 # MEET_PKG overrides the package source (e.g. a local checkout for testing).
 set -euo pipefail
-PKG="${MEET_PKG:-git+https://github.com/SergeyChere/MeetProxy}"
+PKG="${MEET_PKG:-git+https://github.com/SergeyChere/MeetProxy@v0.7.0}"
 
 if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
   echo "Run this inside the project's git repository." >&2; exit 1

@@ -1,14 +1,15 @@
 """MeetProxy runner: executes jobs from a git mailbox branch inside a notebook.
 
 In Colab (one cell):
-    !pip -q install git+https://github.com/SergeyChere/MeetProxy
+    !pip -q install git+https://github.com/SergeyChere/MeetProxy@v0.7.0
     import meetproxy.runner; meetproxy.runner.colab_start("you/your-project")
 
 The mailbox is the branch `meetproxy` of your own project repository; it is created if missing.
 Environment knobs: POLL_S=20 PUSH_S=45 HEARTBEAT_S=300 IDLE_MIN=120 MAX_HOURS=12 GPU_SAMPLE_S=1
+GIT_TIMEOUT_S=180 (no git command may hang longer).
 MEET_CHARTS=1 makes a human report for every job (otherwise only for `# charts: on`).
 """
-import base64, json, os, re, shutil, signal, subprocess, threading, time
+import base64, json, math, os, re, shutil, signal, subprocess, threading, time, uuid
 
 try:
     from meetproxy import history, report, telemetry
@@ -16,10 +17,11 @@ except ImportError:  # runner.py run as a plain script
     import history, report, telemetry
 from datetime import datetime, timezone
 
-VERSION = "0.6.1"
+VERSION = "0.7.0"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRANCH = os.environ.get("MEET_BRANCH", "meetproxy")
 SECRET_RE = re.compile(r"TOKEN|SECRET|KEY|PASSWORD", re.I)
+ATTEMPT = ".meetproxy-attempt"  # in a job's out dir: which attempt wrote what was pushed
 
 
 def now():
@@ -54,14 +56,17 @@ def job_env(**extra):
     return env
 
 
-def copy_redacted(src, dst, vals):
-    """Copy a file, replacing every secret value (also inside binary files) with ***."""
+def copy_unless_secret(src, dst, vals):
+    """Copy a file unless it contains a secret value (also inside binary files). Such a file is
+    withheld, not rewritten: masking would silently change results, and a partly masked file can
+    still leak. The last clean copy (if any) stays. Returns False when the file was withheld."""
     with open(src, "rb") as f:
         data = f.read()
-    for v in vals:
-        data = data.replace(v.encode(), b"***")
+    if any(v.encode() in data for v in vals):
+        return False
     with open(dst, "wb") as f:
         f.write(data)
+    return True
 
 
 def redact(text, vals=None):
@@ -89,8 +94,18 @@ def header(script, key):
     return None
 
 
+def run_git(argv, timeout=None):
+    """Run git with a time limit: a hung network must not freeze the runner. A timeout is
+    reported like a failed command (exit 124)."""
+    t = timeout or float(os.environ.get("GIT_TIMEOUT_S", 180))
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=t)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, "", f"timed out after {t:.0f} s")
+
+
 def git(path, *args, check=True):
-    r = subprocess.run(["git", "-C", path, *args], capture_output=True, text=True)
+    r = run_git(["git", "-C", path, *args])
     if check and r.returncode:
         raise RuntimeError(redact(f"git {' '.join(args)}: {r.stderr.strip()}"))
     return r
@@ -110,8 +125,7 @@ def open_mailbox(url, path, branch=BRANCH):
     """Clone the mailbox branch of `url` into `path`; create the branch if it does not exist."""
     shutil.rmtree(path, ignore_errors=True)
     for _ in range(3):
-        r = subprocess.run(["git", "clone", "-q", "--depth", "20", "-b", branch, url, path],
-                           capture_output=True, text=True)
+        r = run_git(["git", "clone", "-q", "--depth", "20", "-b", branch, url, path])
         if r.returncode == 0:
             set_identity(path)
             return path
@@ -146,10 +160,15 @@ class Mailbox:
         self.lock = threading.Lock()
         self.live = {}  # path inside out/ -> live file or directory outside the clone
         self.secrets = secrets or []
+        self.withheld = set()  # out/-relative paths not pushed because they contain a secret
 
     def sync(self):
-        """Copy live job files into out/, masking secrets: what a job writes is pushed, and a job
-        may print its environment into a results file by accident."""
+        """Copy live job files into out/: what a job writes is pushed, and a job may print its
+        environment into a results file by accident — such a file is withheld (see
+        copy_unless_secret) and listed in self.withheld."""
+        def one(src, dst, rel):
+            if not copy_unless_secret(src, dst, self.secrets):
+                self.withheld.add(rel)
         for dest, src in self.live.items():
             dst = self.p("out", dest)
             if os.path.isdir(src):
@@ -157,9 +176,10 @@ class Mailbox:
                     rel = os.path.relpath(root, src)
                     os.makedirs(os.path.join(dst, rel), exist_ok=True)
                     for f in files:
-                        copy_redacted(os.path.join(root, f), os.path.join(dst, rel, f), self.secrets)
+                        one(os.path.join(root, f), os.path.join(dst, rel, f),
+                            os.path.normpath(os.path.join(dest, rel, f)))
             elif os.path.exists(src):
-                copy_redacted(src, dst, self.secrets)
+                one(src, dst, dest)
 
     def _rebase_pull(self):
         r = git(self.path, *IDENT, "-c", "rebase.autoStash=true", "pull", "-q", "--rebase",
@@ -293,9 +313,22 @@ class Runner:
 
     def run_job(self, name):
         script = open(self.mb.p("cmd", name + ".sh")).read()
-        timeout = float(header(script, "timeout") or 0) or None
-        want = header(script, "gpu")
         done = {"job": name, "start": now(), "gpu": self.gpu}
+        raw = header(script, "timeout")
+        try:
+            timeout = float(raw or 0)
+            if not math.isfinite(timeout) or timeout < 0:
+                raise ValueError
+        except ValueError:
+            err = f"bad header: timeout {raw[:40]!r} (want seconds, e.g. # timeout: 600)"
+            done.update(exit=-4, error=err, seconds=0, end=now())
+            self.finish(name, done)
+            self.mb.push(f"{name}: not run, bad header")
+            return
+        left = self.max_s - (time.time() - self.t_start)  # a job never outlives MAX_HOURS
+        capped = not timeout or timeout > left
+        timeout = max(1.0, min(timeout, left) if timeout else left)
+        want = header(script, "gpu")
         no_gpu = self.gpu == "none"
         if want and (no_gpu or (want.lower() != "any" and want.lower() not in self.gpu.lower())):
             done.update(exit=-2, error=f"wrong gpu: want {want}, have {self.gpu}", seconds=0, end=now())
@@ -323,6 +356,12 @@ class Runner:
         pushed = self.mb.p("out", name)
         if os.path.isdir(pushed):
             seed_from_pushed(pushed, outdir)
+        else:  # nothing pushed: local leftovers belong to an attempt nobody can vouch for
+            shutil.rmtree(outdir, ignore_errors=True)
+            os.makedirs(outdir)
+        with open(os.path.join(outdir, ATTEMPT), "w") as f:
+            f.write(uuid.uuid4().hex + "\n")
+        self.mb.withheld = set()
         resumed = os.path.exists(self.mb.p("out", name + ".log"))
         if resumed and not os.path.exists(logpath):
             shutil.copyfile(self.mb.p("out", name + ".log"), logpath)
@@ -360,6 +399,8 @@ class Runner:
 
             def on_timeout():
                 why["error"] = "timeout"
+                if capped:
+                    why["timeout_capped"] = True  # stopped by MAX_HOURS, not by # timeout:
                 kill(proc)
 
             th = threading.Thread(target=pusher, daemon=True)
@@ -385,8 +426,14 @@ class Runner:
                 if killer:
                     killer.cancel()
                 th.join()
+                with self.mb.lock:
+                    self.mb.sync()
+                for w in sorted(self.mb.withheld):
+                    log.write(f"# MeetProxy: withheld {w}: it contains a secret; not pushed\n")
                 log.flush()
                 done.update(why, exit=code, seconds=round(time.time() - t0, 1), end=now())
+                if self.mb.withheld:
+                    done["withheld"] = sorted(self.mb.withheld)
                 if sampler:
                     try:
                         stats = sampler.stop()
@@ -446,18 +493,20 @@ class Runner:
 
 
 def seed_from_pushed(pushed, live):
-    """Before a job (re)starts, take every file it already pushed unless the local copy is at least
-    as large: on a new machine the local copy is missing, on the same machine after a restart it
-    may be stale (e.g. an empty results file left by an earlier attempt). Results files only grow,
-    so the larger copy is the newer one."""
-    for root, _, files in os.walk(pushed):
-        rel = os.path.relpath(root, pushed)
-        for f in files:
-            src = os.path.join(root, f)
-            dst = os.path.normpath(os.path.join(live, rel, f))
-            if not os.path.exists(dst) or os.path.getsize(dst) < os.path.getsize(src):
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copyfile(src, dst)
+    """Before a job (re)starts, pick its starting files by the attempt marker. The local copy is
+    kept only if the same attempt wrote what was pushed (then local is the same or newer); otherwise
+    — a new machine, or local files left by another attempt — the pushed copy replaces it.
+    Returns "local" or "pushed"."""
+    def mark(d):
+        try:
+            return open(os.path.join(d, ATTEMPT)).read().strip() or None
+        except OSError:
+            return None
+    if os.path.isdir(live) and mark(live) and mark(live) == mark(pushed):
+        return "local"
+    shutil.rmtree(live, ignore_errors=True)
+    shutil.copytree(pushed, live)
+    return "pushed"
 
 
 def kill(proc):
@@ -473,7 +522,7 @@ def start(url, workdir, mailbox):
         git(workdir, "remote", "set-url", "origin", url, check=False)  # drop old token URLs
         git(workdir, "pull", "-q", "--ff-only", check=False)
     else:
-        r = subprocess.run(["git", "clone", "-q", url, workdir], capture_output=True, text=True)
+        r = run_git(["git", "clone", "-q", url, workdir], timeout=3 * float(os.environ.get("GIT_TIMEOUT_S", 180)))
         if r.returncode:
             raise RuntimeError(redact("clone failed: " + r.stderr.strip()))
     open_mailbox(url, mailbox)

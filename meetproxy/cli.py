@@ -16,7 +16,11 @@ BRANCH = os.environ.get("MEET_BRANCH", "meetproxy")
 
 
 def sh(*args, cwd=None, check=True):
-    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    t = float(os.environ.get("MEET_GIT_TIMEOUT_S", 180))  # a hung network must not hang the agent
+    try:
+        r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=t)
+    except subprocess.TimeoutExpired:
+        r = subprocess.CompletedProcess(args, 124, "", f"timed out after {t:.0f} s")
     if check and r.returncode:
         sys.exit(f"{' '.join(args[:3])}…: {r.stderr.strip()}")
     return r
@@ -160,7 +164,7 @@ def cmd_wait(a):
                 short["gpu_check"] = gpu_line(d["gpu_stats"])
             print(json.dumps(short), file=sys.stderr)
             sys.exit(d["exit"] if 0 <= d["exit"] < 256 else 1)
-        if not warned and not log and time.time() - t0 > float(os.environ.get("MEET_SILENT_S", 120)):
+        if not warned and time.time() - t0 > float(os.environ.get("MEET_SILENT_S", 120)):
             msg = runner_problem()
             if msg:
                 print(msg, file=sys.stderr)
@@ -291,6 +295,9 @@ def runner_problem():
         return "No runner has connected yet: ask the human to run the Colab notebook."
     if hb["state"] not in ("idle", "running", "starting"):
         return f"Runner exited ({hb['state']}): ask the human to run the notebook cell again."
+    if hb["state"] == "running" and age_min(hb) > 3:  # a running job heartbeats every PUSH_S
+        return (f"Runner silent for {age_min(hb):.0f} min during job {hb.get('job')}: the runtime "
+                f"was probably disconnected or is stuck; ask the human to check the Colab tab.")
     if hb["state"] == "idle" and age_min(hb) > 12:
         return (f"Runner silent for {age_min(hb):.0f} min: the runtime was probably "
                 f"disconnected; ask the human to reconnect and run the notebook again.")

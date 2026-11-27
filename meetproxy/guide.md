@@ -9,8 +9,8 @@ change a job already sent. The commit must be on GitHub — `meet send` warns if
 ## Start (once per session)
 
 ```bash
-pip install -q git+https://github.com/SergeyChere/MeetProxy || \
-  pip install -q --break-system-packages git+https://github.com/SergeyChere/MeetProxy
+pip install -q git+https://github.com/SergeyChere/MeetProxy@v0.7.0 || \
+  pip install -q --break-system-packages git+https://github.com/SergeyChere/MeetProxy@v0.7.0
 cd <project repo> && meet init && meet status
 ```
 
@@ -31,6 +31,10 @@ If `meet status` says no runner is connected, tell the human exactly this, then 
 3. Read the log and `.meetproxy/out/<job>.done` (GPU name, full commit SHA, seconds, exit, error).
    `exit -3` means the job did not run: its commit could not be found or checked out (not pushed,
    typo in `# branch:` / `# commit:`) — push or fix it and send the job again under a new name.
+   `exit -4`: a header is malformed (e.g. `# timeout: abc`) — fix it, resend under a new name.
+   `timeout_capped: true`: the runner's `MAX_HOURS` ended the job before its own `# timeout:`.
+   `withheld: [...]`: those result files contained a secret and were not pushed — stop printing
+   the environment or tokens into `$MEET_OUT`. `meet status` says when a running job went silent.
 4. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output).
    `gpu ok` means nothing was off. `gpu WARN: idle 66% · thermal throttle 12%` lists only what was:
    idle / low util → the GPU waits for CPU, data or copies; throttle or unstable SM clock → timings

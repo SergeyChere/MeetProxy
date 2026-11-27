@@ -26,7 +26,8 @@ click. First time: you add one Colab secret (`GH_TOKEN`, a GitHub fine-grained t
 ## Safety
 
 The notebook runs whatever is pushed to the repo's `meetproxy` branch: give write access only to people
-and agents you trust. In a public repository the logs are public too. Secrets in environment
-variables are masked in logs.
+and agents you trust; job code runs as the same user as the runner. In a public repository the logs
+are public too. Secrets in environment variables are masked in logs; a result file containing one is
+not pushed.
 
 Source and docs: https://github.com/SergeyChere/MeetProxy · MIT

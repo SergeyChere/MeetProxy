@@ -17,7 +17,7 @@ From the root of the user's project repository (it must have a GitHub `origin` y
 bash <skill-dir>/scripts/setup.sh
 ```
 
-It installs the `meet` command (`pip install git+https://github.com/SergeyChere/MeetProxy`),
+It installs the `meet` command (`pip install git+https://github.com/SergeyChere/MeetProxy@v0.7.0`),
 opens the mailbox in `.meetproxy/` (git-excluded) and prints the runner status.
 
 If it says **no runner is connected**, tell the user this, filling in `<owner/repo>`, then keep
@@ -44,6 +44,10 @@ Check again with `meet status` until it shows `runner: idle | gpu: <name>`.
 4. Read the result: the log, `.meetproxy/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
    and `.meetproxy/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
    found or checked out (not pushed, typo in `# branch:` / `# commit:`) — fix it, resend under a new name.
+   `exit -4`: a header is malformed (e.g. `# timeout: abc`) — fix it, resend under a new name.
+   `timeout_capped: true`: the runner's `MAX_HOURS` ended the job before its own `# timeout:`.
+   `withheld: [...]`: those result files contained a secret and were not pushed — stop printing
+   the environment or tokens into `$MEET_OUT`. `meet status` says when a running job went silent.
 5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
    runner samples the GPU during every job and reports only what was off:
    - `gpu ok: util 97%, mem 41%, 68°C` — nothing to worry about;
@@ -97,7 +101,9 @@ See `reference/troubleshooting.md` when something does not work.
 
 ## What this skill does on the network
 
-Installs a Python package from GitHub, and runs `git fetch/pull/push` against the user's own
-repository (branch `meetproxy`). Nothing else. Jobs never receive the GitHub token; secrets are masked
-in logs and result files before they are pushed. The Colab side executes whatever is pushed to
-`cmd/`, so only trusted people should have write access to the repository.
+Installs a pinned release of a Python package from GitHub, and runs `git fetch/pull/push` against
+the user's own repository (branch `meetproxy`). Nothing else. The runner does not hand the GitHub
+token to jobs, masks secrets in logs and does not push a result file that contains one (listed as
+`withheld` in `.done`). Jobs run as the same user as the runner, so job code must be trusted: the
+Colab side executes whatever is pushed to `cmd/`, and only trusted people should have write access
+to the repository.

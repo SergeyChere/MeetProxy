@@ -31,7 +31,7 @@ also paste it into any Colab notebook yourself:
 
 ```python
 REPO = "alice/my-kernels"  #@param {type:"string"}
-!pip -q install git+https://github.com/SergeyChere/MeetProxy
+!pip -q install git+https://github.com/SergeyChere/MeetProxy@v0.7.0
 import meetproxy.runner
 meetproxy.runner.colab_start(REPO)
 ```
@@ -83,9 +83,13 @@ agent's skills folder) and just say *"run our benchmark on my Colab GPU"*.
 
 - **The notebook runs what is pushed to the `meetproxy` branch.** Give write access to the repository
   only to people and agents you trust. Job code runs with the Colab user's rights.
-- **Jobs never get your GitHub token.** The runner keeps it out of job environments, out of git
-  remote URLs and out of config files; secrets are masked in logs and in every result file before
-  it is pushed. Use a fine-grained token limited to this one repository.
+- **Job code runs as the same user as the runner, so treat it as trusted code.** The runner does
+  not hand your GitHub token to jobs (not in their environment, git remote URLs or config files),
+  but a job written to read it from the runner's process could. Use a fine-grained token limited
+  to this one repository, and do not run code you would not run on your own machine.
+- **What is pushed:** secrets are masked in job logs; a result file that contains a secret is
+  **not pushed at all** — it is listed under `withheld` in `.done` instead.
+- **Installs are pinned** to a release tag (`@v0.7.0`), not to whatever `main` is today.
 - **Each job runs exactly the commit it was sent with** (the agent's HEAD at `meet send`), even if
   the branch moves on before the job starts. If that commit is not on GitHub or cannot be checked
   out, the job does not run (`exit -3`) and `.done` says why. `.done` records the full SHA.

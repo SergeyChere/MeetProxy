@@ -114,8 +114,10 @@ def test_status_messages(opened):
     assert "runner: idle" in out and "gpu: Tesla T4" in out and "queue: (empty)" in out
     opened.heartbeat("idle", minutes_ago=30)
     assert "Runner silent for 30 min" in opened.meet("status").stdout
-    opened.heartbeat("running", minutes_ago=30, job="long")      # running jobs may be quiet
+    opened.heartbeat("running", minutes_ago=1, job="long")       # heartbeats every PUSH_S
     assert "silent" not in opened.meet("status").stdout
+    opened.heartbeat("running", minutes_ago=30, job="long")      # stuck or disconnected
+    assert "silent for 30 min during job long" in opened.meet("status").stdout
     opened.heartbeat("idle-exit")
     assert "Runner exited (idle-exit)" in opened.meet("status").stdout
 

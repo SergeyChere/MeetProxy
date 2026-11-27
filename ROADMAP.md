@@ -8,9 +8,8 @@ providers; value is proven before the provider list grows.
 
 ```mermaid
 flowchart LR
-    D["✅ Done<br/>M0–M6<br/>telemetry · skill · history<br/>reports · hardening · tests"]
-    Q["🔧 M7<br/>quick fixes<br/>current mailbox"]
-    DP["🤝 M8<br/>design partners<br/>(in parallel)"]
+    D["✅ Done<br/>M0–M7<br/>telemetry · skill · history<br/>reports · hardening · tests · safety fixes"]
+    DP["🤝 M8<br/>two-week falsification<br/>5 users · repeat use"]
     S0["🧪 Stage 0 · M9<br/>spike: Colab CLI<br/>lifecycle facts"]
     A["🧱 Stage A · M10<br/>durable contract<br/>local + Colab"]
     B["🔬 Stage B · M11<br/>pilot → GO / ITERATE / STOP<br/>+ small beta"]
@@ -19,9 +18,10 @@ flowchart LR
     E["🌍 Stage E · M14<br/>on demand<br/>providers · Colab API · MCP"]
     PRO["💎 Pro · M15–M16<br/>CUDA profiling"]
     V1["1.0 · M17"]
-    D --> Q --> S0 --> A --> B
-    Q --> DP -.-> B --> C --> DD --> E --> PRO --> V1
-    B -. "only GO unlocks<br/>new backends" .-> C
+    D --> DP -- "pain + repeat use" --> A --> B
+    D --> S0 --> A
+    B --> C --> DD --> E --> PRO --> V1
+    B -. "technical + adoption GO<br/>unlock new backends" .-> C
 
     classDef done fill:#eefaf4,stroke:#1f9d6b,stroke-width:2px,color:#163b2c
     classDef fix fill:#fdeeee,stroke:#d64545,stroke-width:2px,color:#5a1d1d
@@ -30,7 +30,6 @@ flowchart LR
     classDef rel fill:#f4f0ff,stroke:#7a5af0,stroke-width:2px,color:#2a2244
     classDef later fill:#f6f4ef,stroke:#9a948a,stroke-width:2px,color:#2b2925
     class D done
-    class Q fix
     class S0,A,C core
     class DP prove
     class B prove
@@ -56,7 +55,7 @@ Legend: ✅ done · 🔜 next · ⬜ planned.
 
 ## Next
 
-### 🔜 M7 — quick fixes to the current mailbox flow
+### ✅ M7 — quick fixes to the current mailbox flow (0.7.0)
 
 Small, safe fixes to what users run today, while stage A is designed.
 *Design: §7 (exact source), §6 (artifacts), §4 (status) · Requirements: PR-06, PR-08, PR-10.*
@@ -64,27 +63,42 @@ Small, safe fixes to what users run today, while stage A is designed.
 - [x] Jobs are pinned to the submitted commit (`# commit:` from `meet send`); the branch moving on
       afterwards does not change them; a malformed or missing commit refuses the job; jobs without
       the header are marked unpinned.
-- [ ] A bad header (`# timeout: abc`) fails that job with a clear error instead of stopping the runner.
-- [ ] Timeouts on every git command: a hung network cannot freeze the runner.
-- [ ] `meet status` / `meet wait` notice a stuck `running` (no heartbeat for ~3 min during a job).
-- [ ] A job's timeout never exceeds what is left of `MAX_HOURS`.
-- [ ] A result file that contains a known secret is withheld and reported, not rewritten.
-- [ ] Version tags; the notebook, skill and guide install a pinned version instead of `main`.
-- [ ] Resuming a job after a restart decides by a reliable marker, not by file size.
+- [x] A bad header (`# timeout: abc`) fails that job with a clear error instead of stopping the runner.
+- [x] Timeouts on every git command: a hung network cannot freeze the runner.
+- [x] `meet status` / `meet wait` notice a stuck `running` (no heartbeat for ~3 min during a job).
+- [x] A job's timeout never exceeds what is left of `MAX_HOURS`.
+- [x] A result file that contains a known secret is withheld and reported, not rewritten.
+- [x] Version tags; the notebook, skill and guide install a pinned version instead of `main`.
+- [x] Resuming a job after a restart decides by a reliable marker, not by file size.
+- [x] The Colab notebook cell calls the renamed package (a leftover from the rename broke it).
+- [x] README states the same-user trust boundary plainly instead of a stronger promise.
 
 ## Stage 0 — demand and feasibility (in parallel)
 
-### 🔜 M8 — design partners
+### 🔜 M8 — design partners: a two-week attempt to falsify the idea
 
+Evidence before more building. Decision rules are written down **before** recruitment and are
+exploratory, not statistical. Nothing in stage A starts until this ends.
 *Design: §17, §18 · Requirements: PR-26, PR-20, PR-22.*
 
-- [ ] Recruit 5 people from the initial segment who use a **local NVIDIA GPU and/or Colab** (the
-      first beta's resources; lab-server users wait for SSH after GO) — CUDA, research and
-      coding-agent communities.
-- [ ] Observe their real GPU workflow; then let them try a small campaign with today's tool.
-- [ ] Record, opt-in: time to first run, manual interventions, objections (PRODUCT §7), whether they
-      repeat it within a week.
-- [ ] Feed findings back into PRODUCT before stage A is complete.
+- [ ] **Find the pain.** Recruit 5 independent, frequent GPU experimenters (local NVIDIA GPU and/or
+      Colab; also note lab-server users who ask). Observe their last real experiment, including the
+      native tools they use. Pass: ≥ 3 have a recurring, meaningful pain and a real upcoming task.
+- [ ] **Offer the outcome, not the architecture.** A short demo or an assisted experiment. Pass: ≥ 3
+      volunteer a real task; every refusal and its reason is recorded.
+- [ ] **Smallest test, with today's runner** (assisted and labelled as such — nothing is built just
+      to collect feedback): an existing correctness check, one GPU, 3–5 variants, compared with the
+      user's real incumbent — including the agent with its normal tools, a small run script, the
+      existing tests and an experiment log, counting the time to create it. Record cold start
+      end to end, active human minutes, verified result, cost, failures. Include one expert with
+      mature scripts and one user without them.
+- [ ] **Repeat use.** Within two weeks, ≥ 2 independent users choose MeetProxy again for a real task
+      without prompting or setup help. Count everyone recruited; explain each non-activation.
+- [ ] **Decide:** GO only for the validated use case (safety adequate, users choose it again) ·
+      ITERATE on one observed blocker · STOP the broad build if the pain is rare, native tools
+      suffice or nobody repeats. If a project template or skill is enough, ship that instead of a
+      framework.
+- [ ] Opt-in records only; findings go into PRODUCT through the normal chain.
 
 ### ⬜ M9 — spike: Colab CLI lifecycle
 
@@ -166,7 +180,17 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
       reported separately; time to first run, setup and sign-in count; disconnect tested separately;
       hardware and price differences reported separately; all failures recorded.
 - [ ] Everything published: protocol, every run, raw data, limitations.
-- [ ] Decision fixed in advance: **GO / ITERATE / STOP**.
+- [ ] Decision fixed in advance: **GO / ITERATE / STOP**, recorded twice: **technical** (the
+      pre-registered comparison) and **adoption** (independent repeated use, a choice over the
+      incumbent workflow, inactive users and refusals counted). A technical GO alone does not unlock
+      new backends.
+- [ ] **Attribution:** fixed-variant execution tests are reported apart from open-ended agent
+      campaigns, so a lucky hypothesis is not credited to the runner.
+- [ ] **Scoped correctness:** "verified" is reported as evidence for the oracle, workload and
+      environment; the pilot includes a candidate that passes a weak test and fails a stronger
+      held-out check.
+- [ ] Memory arm vs a fresh agent with ordinary experiment notes; no multi-GPU savings advertised
+      until shown; no widening of the audience after a win on one task.
 - [ ] The pilot task is a **campaign** (PRODUCT §5), so the comparison measures the promise, not a
       single job.
 - [ ] **Fresh-session memory test:** close the first agent session, resume with a fresh context;
@@ -177,7 +201,7 @@ table in DESIGN §12 with facts; nothing unsupported is claimed afterwards.
       Colab** (target 20 users; the advertised campaign must work on their resources);
       measure, opt-in, activation and repeat use at 7 and 30 days.
 
-**Gate:** only **GO** unlocks new backends — publishing the pilot is not enough. Local + Colab must
+**Gate:** only a technical **and** an adoption **GO** unlock new backends — publishing the pilot is not enough. Local + Colab must
 also show reliable cancellation and recovery and correct results.
 
 ## Stage C — SSH and the mailbox
