@@ -4,9 +4,10 @@ An agent that drives a GPU with this tool: read `meetproxy/guide.md` (also print
 An agent that develops this tool: keep `bash tests/run_all.sh` passing (pytest unit, CLI and
 end-to-end tests in `tests/test_*.py`, plus `tests/roundtrip.sh` and `tests/skill_smoke.sh`; CI runs
 it on every push) and add a test with every change — a bug fix starts with a test that fails. Keep
-the docs in sync — `skill/meetproxy/SKILL.md` is a standalone copy of `meetproxy/guide.md` for skill
-marketplaces; change both. `scripts/build_skill.sh` builds the upload zip in `dist/`.
+the docs in sync — section 6 *Mailbox route* of `skill/meetproxy/SKILL.md` is a standalone copy of
+`meetproxy/guide.md`; change both. `scripts/build_skill.sh` builds the upload zip in `dist/`.
 When a milestone item is done, tick it in `ROADMAP.md` in the same commit.
-Plans live in a chain: `docs/PRODUCT.md` (requirements `PR-NN`) → `docs/DESIGN.md` (sections cite
-PR-NN) → `ROADMAP.md` (milestones cite §N and PR-NN). Change them in that order; `tests/test_docs.py`
-checks the links.
+Plans live in a chain: `docs/PRODUCT.md` (requirements `PR-NN`, the product is the skill) →
+`skill/meetproxy/SKILL.md` (sections listed in PRODUCT §1.2) and `docs/DESIGN.md` (sections cite
+PR-NN) → `ROADMAP.md` (milestones cite §N and PR-NN). Change them in that order;
+`tests/test_docs.py` checks the links.

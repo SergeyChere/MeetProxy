@@ -1,7 +1,8 @@
 # Roadmap
 
-**When** things happen. It is derived from the other two documents:
-[PRODUCT.md](docs/PRODUCT.md) (why, for whom, requirements `PR-NN`) →
+**When** things happen. It is derived from the other documents:
+[PRODUCT.md](docs/PRODUCT.md) (why, for whom, requirements `PR-NN`; the product is the skill) →
+[SKILL.md](skill/meetproxy/SKILL.md) (what the agent does) and
 [DESIGN.md](docs/DESIGN.md) (how, sections `§N`) → this roadmap. Every milestone names the design
 sections it builds and the requirements it serves. Safety, lifecycle and measurement come before new
 providers; value is proven before the provider list grows.
@@ -85,12 +86,14 @@ written down **before** recruitment and are exploratory, not statistical. M10 st
 **Arm B, the thin skill** — workflow in the skill, machinery only where it must be enforced:
 - [x] Install: exact version (`meet --version` checked), isolated venv, only with the user's
       consent; never `--break-system-packages`.
-- [ ] Provider-neutral `SKILL.md` + quick start: local GPU first, Colab through the official Colab
-      CLI with an explicit command-line fallback (no assumption that one skill can call another);
-      the mailbox stays as an optional route where only it works.
+- [x] Provider-neutral `SKILL.md` derived from PRODUCT §1.2: campaign workflow, local GPU first,
+      Colab through the official Colab tools with the mailbox as fallback, missing capability stated
+      (no assumption that one skill can call another), agent-written campaign records.
+- [ ] Quick start for a local-GPU campaign, tried by someone who did not write it.
 - [ ] Local path with **no GitHub and no notebook**: a small helper that runs a job under a hard
       deadline, records `.done`, results, telemetry and history (reusing today's code).
-- [ ] Small versioned JSON/JSONL experiment records (campaign, variants, verdicts); no database.
+- [ ] A helper that writes and validates the JSON/JSONL campaign records (today the agent writes
+      them, following the skill); no database.
 - [ ] Deterministic checks a prompt cannot replace: the oracle pinned (command + file hashes),
       matched measurements recorded, verified-or-not decided by code, never by the model.
 - [ ] Missing capabilities reported explicitly per host; never a silent switch of destination.

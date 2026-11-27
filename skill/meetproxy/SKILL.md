@@ -1,17 +1,95 @@
 ---
 name: meetproxy
-description: Run GPU experiments (CUDA kernels, PyTorch training, benchmarks) on the user's Google Colab GPU from a coding agent, through a git branch used as a mailbox. Use when the user wants code run "on my Colab", "on the GPU", or asks to benchmark or test something that needs a GPU the agent does not have.
+description: Run evidence-backed GPU experiment campaigns (CUDA kernels, PyTorch, benchmarks) on GPUs the user already has — their local NVIDIA card or Google Colab — and come back with the best verified variant and its evidence. Use when the user wants code made faster or tested on a GPU, a set of variants compared, or something run "on my GPU" / "on my Colab".
 ---
 
 # MeetProxy
 
-You have no GPU, the user has a Colab runtime. You exchange work through the branch `meetproxy` of the
-user's project repository: you push jobs (bash scripts) to `cmd/`, a loop in the Colab notebook runs
-them and pushes logs and results to `out/`. No ports, tunnels or shells are opened.
+You run GPU experiments for the user on GPUs they already have and return the **best verified
+result with its evidence**, not just numbers. You reason and propose; correctness is decided by the
+project's own checks, never by your judgement. The user chooses the GPU; you never switch it.
 
-## 1. Set up (once per session)
+## 1. Campaign
 
-From the root of the user's project repository (it must have a GitHub `origin` you can push to):
+For anything beyond a single run, work as a campaign:
+
+1. **State it, then ask once.** Objective metric (e.g. kernel time), baseline, **correctness
+   oracle** (prefer the project's existing tests, reference implementation or known exact results),
+   the approved GPU(s), a time and money limit, stop conditions, and the **reference GPU** that will
+   decide the winner. Get the user's approval of this once; stay inside it.
+2. **Check what was tried.** Read the campaign records (section 4) for earlier variants and why they
+   were rejected. A prior failure is a suggestion, not a ban: retest when the GPU, input or code
+   changed, and say why.
+3. **Run variants** — sequentially on one GPU is a valid campaign. Use several GPUs at once only
+   when the gain clearly outweighs extra setup, transfer and compilation.
+4. **Reject incorrect variants whatever their speed.** Compare timings only on the same GPU type
+   with the same input.
+5. **Different GPUs screen, one decides.** If you screened on several GPUs, keep part of the budget
+   for the end, shortlist by a rule you stated in step 1 (keep variants strong on any one GPU), and
+   re-run finalists and the baseline on the reference GPU. Only that matched run names a winner;
+   otherwise report a winner per GPU type or "insufficient evidence".
+6. **Propose the next round** from the results, inside the approved limits.
+7. **Stop** on a stop condition or the limit. Release anything you started.
+8. **Report:** best verified variant vs baseline (with the matched numbers), what was rejected and
+   why, total cost where known (GPU time, paid sessions, your own tokens if the host shows them).
+   If nothing beat the baseline, say so.
+
+For a single "run this on my GPU": run it once with a timeout, report exit code, time, GPU and the
+commit that ran, in one or two lines.
+
+## 2. Where the GPU is
+
+Use only the GPU the user named or approved. If a route is missing a capability (not installed,
+not signed in, no network), **say which and stop** — do not fall back to another destination.
+
+| The user has | Route |
+|---|---|
+| an NVIDIA card in this machine | run directly: `nvidia-smi` for the GPU name, `timeout <seconds> bash job.sh` for every run |
+| Colab, and the official Colab CLI or its skill is installed and signed in | follow that tool's own instructions to run each job; the rules of sections 1, 3–5 still apply |
+| Colab, and the official tool is not available | the **mailbox route** (section 6) |
+
+Do not assume you can call another skill from this one; use command-line tools.
+
+## 3. Honest results
+
+- Correctness first: run the oracle for **every** variant and record its exit code. A variant
+  whose oracle fails, or that has no oracle, is never called the winner.
+- Repeat timed runs (≥ 3), same input, nothing else on the GPU (`nvidia-smi`); report spread.
+- A result that looks too good (0.2 s, identical times) usually means caching, a skipped step or
+  wrong input — read the log before reporting.
+- Copy numbers from result files; never type a measurement from memory.
+- Throttling, an idle or shared GPU distort timings: do not compare those runs.
+
+## 4. Records
+
+Keep one folder per campaign in the project, `meet-runs/<campaign>/`, plain files the user owns:
+
+- `campaign.json` — what you stated in step 1 (objective, baseline, oracle command, approved GPUs,
+  limits, reference GPU, shortlist rule).
+- `variants.jsonl` — one line per run: variant id, parent, hypothesis in one sentence, commit, GPU,
+  oracle exit code, measured values (copied from results), verdict, reason if rejected.
+- results and logs of each run next to it.
+
+Measured facts and your interpretation go in separate fields. Commit these files only if the user
+asks.
+
+## 5. Safety
+
+- Never start paid compute or a new destination without the user's approval; every run has a
+  timeout; release sessions you started.
+- Code leaves this machine only to a destination the user approved for this repository.
+- Never print secrets or tokens, never put them in files, commands or chat; never open network
+  services or tunnels.
+- Job code runs as the user: run only code you would run on their machine.
+- Tell the user in one line whenever they must act (approve, sign in, reconnect, pick a GPU).
+
+## 6. Mailbox route
+
+Today's Colab route without the official tool: you push jobs (bash scripts) to `cmd/` on the branch
+`meetproxy` of the user's repository; a loop in a Colab notebook runs them and pushes logs and
+results to `out/`. No ports, tunnels or shells are opened. Needs a GitHub `origin` you can push to.
+
+### Set up (once per session)
 
 ```bash
 bash <skill-dir>/scripts/setup.sh
@@ -34,80 +112,52 @@ working on the experiment while you wait:
 
 Check again with `meet status` until it shows `runner: idle | gpu: <name>`.
 
-## 2. Run an experiment
+### Run a job
 
 1. **Commit and push** the code. A job runs exactly the commit you are on when you send it —
    later pushes do not change it — and only once that commit is on GitHub; uncommitted changes
    never reach the GPU (`meet send` warns about both).
-2. Write a job script. Start from `templates/job.sh` in this skill: it has the header lines and the
-   results CSV already set up.
-3. Run it:
-   - short job: `meet run s01_bench job.sh` — sends, streams the log, exits with the job's exit code;
-   - long job: `meet send s01_bench job.sh`, keep working, later `meet wait s01_bench` (without
-     `--follow`: it would stream the whole log into your context), then `meet logs s01_bench --tail 50`.
-4. Read the result: the log, `.meetproxy/out/<job>.done` (exit code, seconds, GPU, full commit SHA)
-   and `.meetproxy/out/<job>/results.csv`. `exit -3` means the job did not run: its commit could not be
-   found or checked out (not pushed, typo in `# branch:` / `# commit:`) — fix it, resend under a new name.
-   `exit -4`: a header is malformed (e.g. `# timeout: abc`) — fix it, resend under a new name.
-   `timeout_capped: true`: the runner's `MAX_HOURS` ended the job before its own `# timeout:`.
-   `withheld: [...]`: those result files contained a secret and were not pushed — stop printing
-   the environment or tokens into `$MEET_OUT`. `meet status` says when a running job went silent.
-5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in the `wait` output). The
-   runner samples the GPU during every job and reports only what was off:
-   - `gpu ok: util 97%, mem 41%, 68°C` — nothing to worry about;
-   - `idle N%` / `util avg N%` — the GPU waits for CPU, data loading or copies, not for your kernel;
-   - `thermal throttle`, `hw slowdown`, `SM clock unstable` — timings are distorted, do not compare;
-   - `mem peak N%` — close to out-of-memory;
-   - `other GPU procs` / `GPU busy at start` — the GPU was shared.
-   Full numbers are in `gpu_stats` in `.done`, every sample in `.meetproxy/out/<job>/gpu.csv`.
-   `# telemetry: off` in a job disables it.
-6. **Compare runs** with `meet history` — one line per finished job (GPU, commit, seconds, exit,
-   util, flags) — instead of reopening old logs.
+2. Write a job script from `templates/job.sh`. Headers: `# timeout: <seconds>` (always),
+   `# gpu: any` (or `T4`, `L4`, `A100` when numbers matter — refused on another GPU).
+   Self-contained bash from the project root; append one CSV line per measurement to
+   `$MEET_OUT/results.csv` (pushed during the run). Job names are unique and sortable
+   (`s01_build`, `s02_bench`); a name runs once. When the user is away, send one script that runs
+   every planned variant.
+3. Run it: short job `meet run s01_bench job.sh` (streams the log, exits with the job's code); long
+   job `meet send s01_bench job.sh`, keep working, later `meet wait s01_bench` (without `--follow`:
+   it would stream the whole log into your context), then `meet logs s01_bench --tail 50`.
+4. Read `.meetproxy/out/<job>.done` (exit, seconds, GPU, full commit SHA) and
+   `.meetproxy/out/<job>/results.csv`. `exit -3`: the commit could not be found or checked out (not
+   pushed, typo in `# branch:` / `# commit:`) — fix it, resend under a new name. `exit -4`: a header
+   is malformed (e.g. `# timeout: abc`). `timeout_capped: true`: the runner's `MAX_HOURS` ended the
+   job first. `withheld: [...]`: those result files contained a secret and were not pushed — stop
+   printing the environment or tokens into `$MEET_OUT`.
+5. Read the **`gpu ...` line** at the end of the log (also `gpu_check` in `wait`): `gpu ok` — fine;
+   `idle` / low `util` — the GPU waits for CPU, data or copies; `thermal throttle`, `hw slowdown`,
+   `SM clock unstable` — do not compare timings; `mem peak` — near OOM; `other GPU procs` /
+   `GPU busy at start` — shared GPU. Full numbers in `gpu_stats` in `.done`, every sample in
+   `.meetproxy/out/<job>/gpu.csv`; `# telemetry: off` disables it.
+6. **Compare runs** with `meet history` (one line per job: GPU, commit, seconds, exit, util, flags)
+   instead of reopening old logs.
 
-Other commands: `meet logs <job> --tail 50`, `meet status`, `meet stop` (ends the runner).
+If `meet status` says the runner went silent, the runtime was probably disconnected: ask the user to
+reconnect and run the notebook again. `meet stop` ends the runner. Never try to stop or delete the
+Colab runtime, or merge the `meetproxy` branch.
 
-## For the human, not for you
+### For the human, not for you
 
-- When the user asks for charts or a report: add `# charts: on` to the job, or run
-  `meet report <job>` / `meet report history`, and give them the printed path. On GitHub the
-  reports are in branch `meetproxy`, folder `out/`, and render with their charts.
-- **Never open, read or summarize** `report.md`, `history.md` or `charts/*.svg`: they are drawn
-  for people, cost you tokens, and hold nothing that `.done` and `history.csv` do not.
-- `meet export [job…|--all]` copies results into `meet-runs/` of the project; it commits
-  nothing. Commit only if the user asks.
-
-## 3. Job script rules
-
-- Header lines: `# timeout: <seconds>` (always), `# gpu: any` (or `T4`, `L4`, `A100` when numbers
-  matter — the job is refused on another GPU).
-- Self-contained bash, run from the project root: install and build what it needs.
-- Append one CSV line per measurement to `$MEET_OUT/results.csv`; it is pushed during the run, so
-  a job that dies halfway still leaves data.
-- Job names are unique and sortable (`s01_build`, `s02_bench`). A name runs only once.
-- When the user is away, send one longer script that runs every planned variant instead of many
-  small jobs.
-
-## 4. Reading results honestly
-
-- Compare timings only from the same GPU — check the GPU in `.done`.
-- A result that looks too good (identical times, 0.2 s for a big job) usually means caching, a
-  skipped step or wrong input. Read the log before reporting.
-- Check that each variant gives correct output, not only that it is fast.
-
-## 5. Never
-
-Print secrets, open network services or tunnels, try to stop or delete the Colab runtime, or merge
-the `meetproxy` branch into anything. Tell the user in one line whenever they must act (reconnect, pick
-a GPU, add the secret). If `meet status` says the runner went silent, the runtime was probably
-disconnected: ask them to reconnect and run the notebook again.
+- Charts or a report on request: `# charts: on` in the job, or `meet report <job>` /
+  `meet report history`; give the user the printed path. **Never open, read or summarize**
+  `report.md`, `history.md` or `charts/*.svg` — they cost tokens and hold nothing `.done` and
+  `history.csv` do not.
+- `meet export [job…|--all]` copies results into `meet-runs/`; it commits nothing.
 
 See `reference/troubleshooting.md` when something does not work.
 
-## What this skill does on the network
+### What this route does on the network
 
-Installs a pinned release of a Python package from GitHub, and runs `git fetch/pull/push` against
-the user's own repository (branch `meetproxy`). Nothing else. The runner does not hand the GitHub
-token to jobs, masks secrets in logs and does not push a result file that contains one (listed as
-`withheld` in `.done`). Jobs run as the same user as the runner, so job code must be trusted: the
-Colab side executes whatever is pushed to `cmd/`, and only trusted people should have write access
-to the repository.
+Installs a pinned release of a Python package from GitHub (only with consent), and runs
+`git fetch/pull/push` against the user's own repository (branch `meetproxy`). Nothing else. The
+runner does not hand the GitHub token to jobs, masks secrets in logs and does not push a result file
+that contains one. Jobs run as the same user as the runner, so only trusted people should have write
+access to the repository.

@@ -71,8 +71,20 @@ def test_design_section_references_exist():
             assert r in secs, f"{'/'.join(doc)} cites missing DESIGN §{r}"
 
 
+def test_every_skill_section_named_in_product_exists():
+    product, skill = _read("docs", "PRODUCT.md"), _read("skill", "meetproxy", "SKILL.md")
+    table = product[product.index("### 1.2 What the skill contains"):product.index("## 2. ")]
+    names = re.findall(r"^\| `([^`]+)`", table, re.M)
+    assert names, "PRODUCT §1.2 lists no skill sections"
+    headings = re.findall(r"^## \d+\. (.+)$", skill, re.M)
+    assert names == headings, f"PRODUCT §1.2 {names} != SKILL.md sections {headings}"
+    for pr in set(re.findall(r"\bPR-\d+\b", table)):
+        assert re.search(rf"^\| \*\*{pr}\*\* \|", product, re.M), pr
+
+
 def test_documents_point_to_each_other():
     product, design, road = _read("docs", "PRODUCT.md"), _read("docs", "DESIGN.md"), _read("ROADMAP.md")
     assert "(DESIGN.md)" in product and "ROADMAP.md" in product
+    assert "(../skill/meetproxy/SKILL.md)" in product
     assert "Derived from [PRODUCT.md]" in design and "ROADMAP" in design
     assert "docs/PRODUCT.md" in road and "docs/DESIGN.md" in road

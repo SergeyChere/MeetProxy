@@ -4,7 +4,7 @@
 [ROADMAP](../ROADMAP.md) is derived from this document. Every design decision below names the
 requirements it serves.
 
-Status: revised proposal, 27 Nov 2026 (v2.7). v2 incorporated the first external design review;
+Status: revised proposal, 27 Nov 2026 (v2.8). v2 incorporated the first external design review;
 v2.1 applies the contract refinements of the second review (approval scope, session expiry,
 recovery states, journal guarantees, RunSpec vs AttemptManifest, delivery outcome, benchmark and
 evaluation protocol, a feasibility spike first); v2.2 applies the third review (bounded collection
@@ -19,23 +19,29 @@ pilot metric with SkyPilot as a comparison arm); v2.6 follows PRODUCT rev. 4 (tw
 routes to GO, screening safeguards, single-GPU campaigns and a justified choice of parallelism,
 direct local execution as a pilot arm, a fresh-session memory test); v2.7 changes the order of
 investment, not the requirements: a thin skill is tested first and stage-A components are built only
-for failures it cannot solve (§18). The contract is agreed **before** production code
+for failures it cannot solve (§18); v2.8 follows PRODUCT rev. 5 (skill-first): the product is the
+skill, each requirement names its layer, and this document designs the helpers and — only on
+evidence — core components (§1, §1.2). The contract is agreed **before** production code
 changes; nothing here describes existing code unless it says so.
 
 ## 1. What MeetProxy is, and what it is not
 
-**Is:** a small, deterministic core behind the product promise (PRODUCT §1): *better verified GPU
-experiments, less babysitting, same budget — on the GPUs you already have* (a target, not a proven
-claim). It runs
-**experiment campaigns** whose runs are **correct, measured fairly, recoverable after failures,
-cheap to observe and remembered** — on the GPUs the user chose.
+**Is:** the machinery under one installable skill (PRODUCT §1.1), which is the product and carries
+the promise: *better verified GPU experiments, less babysitting, same budget — on the GPUs you
+already have* (a target, not a proven claim). The skill runs **experiment campaigns**; this document
+designs what instructions cannot guarantee — runs that are **correct, measured fairly, recoverable,
+cheap to observe and remembered** on the GPUs the user chose.
 
 **Is not:** a replacement for the official Colab CLI, a universal cloud manager, a scheduler, or a
-set of instructions that the model is trusted to follow. Moving code to a GPU is solved by official
+platform that has to exist before the skill is useful. Moving code to a GPU is solved by official
 tools (Colab CLI, `ssh`); MeetProxy uses them.
 
-**The product surface is a skill** (`/meetproxy` in Claude Code, `$meetproxy` in Codex). The skill
-explains intent and results; the core enforces everything that matters.
+**Layers** (PRODUCT §1.1): the **skill** (`skill/meetproxy/SKILL.md`, `/meetproxy` in Claude Code,
+`$meetproxy` in Codex) holds the workflow; **helpers** — small deterministic scripts — enforce
+what must hold whether or not the model follows instructions; **native tools** do GPU access,
+sign-in and transfer; **core components** (the journal, lifecycle, policy broker of §§4–5) are
+built only for a recurring failure the skill-first test (§17, §18) shows the lower layers cannot
+solve. Sections below describe the full contract; each component is conditional in that sense.
 
 **Value must be proven, not assumed** (section 17): MeetProxy is worth building only if, on a real
 CUDA experiment, it beats the official Colab skill alone on at least one target metric — manual
@@ -74,6 +80,15 @@ interventions, correctness, recovery, tokens or wall time — without hurting co
 | PR-27 low overhead | §9.1 overhead budget |
 | PR-28 portable experiment definitions | §7 RunSpec (requirements block) |
 | PR-29 extensible backends | §12 backend contract |
+
+### 1.2 Layers per design section
+
+| Layer | Sections |
+|---|---|
+| Skill | §8 comparison rules (as instructions), §10.1–10.2 campaign workflow, §16 hosts |
+| Helpers | §7 exact source, §8 oracle and verdicts, §9 telemetry, §10.3 records, §11 cost, §14 run store |
+| Native tools | §12 backends, §15 bootstrap and sign-in |
+| Core, only on evidence | §4 lifecycle and journal, §5 policy gate, §6 strict-mode broker, §13 remote wrapper |
 
 ## 2. Principles
 
