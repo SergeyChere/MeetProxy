@@ -27,7 +27,7 @@ A change starts here and flows down: a new or changed requirement first, then th
 design that meet it, then the milestone that builds it. A test keeps the links intact (every
 `PR-NN` is designed and planned, every `§N` exists, every skill section named in §1.2 exists).
 
-Status: 27 Nov 2026 (rev. 9, after five rounds of an adversarial review whose starting position was
+Status: 27 Nov 2026 (rev. 10; rev. 9 came after five rounds of an adversarial review whose starting position was
 "nobody needs this"). Rev. 7 narrowed the product to one thing generic tools leave to instructions:
 **an enforced referee for GPU speed-up claims**, with the evidence behind the problem (§2), the
 segment's observable size (§3), the alternatives (§4) and numeric GO margins (§9). Rev. 8 makes the
@@ -38,18 +38,27 @@ counterbalancing and minimum counts (§9). Rev. 9 adds the test's statistical po
 seeded execution test the deciding one (§9), fixes the trust mode the test runs in (§1.3, §9),
 budgets partner effort with a fallback (§9), and tightens the demand gate (§10); the deciding
 exploits are a held-out set the referee was not built against, and route 1 needs natural evidence
-from the test itself (§9). Everything here is a **hypothesis to validate**: no
-user has been interviewed yet. Sources are listed at the end.
+from the test itself (§9). Rev. 10 follows an independent review of rev. 9 (GO for discovery, NO GO
+for a general-purpose referee build): verdicts are scoped evidence, not proof (§1.3); the first
+referee supports one adapter contract, not arbitrary repositories (§1.3); it owns invocation,
+inputs, validation and timing of the same computation; timing semantics and legitimate
+optimisations are protected from false rejects; repeats use content plus execution context and
+early stopping is advisory; the seeded metric counts eligibility per candidate; intervals and
+clusters are fixed in advance; a protocol dry run and a trial of existing harnesses come before any
+referee code (§9.1); cost of evidence and a cold-start target are set (§9). Everything here is a
+**hypothesis to validate**: no user has been interviewed yet. Sources are listed at the end.
 
 ## 1. The promise and the product
 
-> **Only real speed-ups survive.** Your coding agent optimizes your GPU code on a GPU you already
-> have; MeetProxy checks every speed-up it claims before you believe it — and keeps the agent
-> searching instead of stopping at the first win.
+> **Only checked speed-ups survive.** Your coding agent optimizes a GPU operator on a GPU you already
+> have; MeetProxy checks every speed-up it claims against your oracle, on inputs the agent did not
+> see, before you believe it.
 
-A target, not a proven claim (PR-20). The first benefit is **fewer false winners**: a variant that is
-fast because it is wrong, cached, tuned to one input or measured against a stale baseline is never
-reported as an improvement. The second is **a better verified result at the same budget**, because
+A target, not a proven claim (PR-20), and never a proof of correctness: a check covers the oracle,
+the inputs tested, the timing protocol and the environment it ran in, and says so (§1.3). The first
+benefit is **fewer false winners**: a variant that is fast because it is wrong, reuses results
+across inputs, is tuned to one input or is measured against a stale baseline is not reported as an
+improvement. The second is **a better verified result at the same budget**, because
 the agent does not stop early or retry what already failed. Less babysitting follows from both; it
 is measured, not promised.
 
@@ -74,7 +83,7 @@ Four layers, each used only where the one above it is not enough:
 | Layer | Does | Examples |
 |---|---|---|
 | **Skill** | the workflow: states the campaign, proposes variants, explains results, asks the user | campaign steps, stop rules, what to report |
-| **Referee and helpers** | what must hold whether or not the model follows instructions | oracle pinned and run by code, held-out inputs, fresh inputs per timed run, deadlines, source identity, records |
+| **Referee and helpers** | what must hold whether or not the model follows instructions | reference and spec pinned, inputs created, candidate invoked, checked and timed by code, held-out cases, deadlines, source identity, records |
 | **Native tools** | GPU access, sign-in, transfer, sessions | the local card, the official Colab CLI and skill, `ssh` |
 | **Core components** | none planned; durable lifecycle, journal or policy broker **only** for a recurring failure the lower layers could not solve, shown in the test of §9 | built one at a time, kept only if they measurably fix that failure |
 
@@ -115,57 +124,86 @@ errors are measured (§9).
 | Skill section or reference | Serves |
 |---|---|
 | `Choose a route` — approved route only, unavailable routes shown with the reason, route consent | PR-02, PR-03, PR-04, PR-18 |
-| `Campaign` — the workflow of §5 | PR-22, PR-05, PR-11, PR-23 |
-| `Honest results` — the referee decides; too-good-to-be-true checks | PR-05, PR-20 |
-| `Records` — what is written down per campaign and where | PR-16, PR-23, PR-25 |
+| `Campaign` — the workflow of §5: one GPU, budget as a ceiling | PR-22, PR-05, PR-23 |
+| `Honest results` — every result labelled instruction-only unless the referee produced it; too-good-to-be-true checks | PR-05, PR-20 |
+| `Records` — `meet-runs/campaigns/<campaign>/`, identity with execution context | PR-16, PR-23, PR-25 |
 | `Safety` — approvals, deadlines, owned vs borrowed sessions, secrets, trusted code | PR-07, PR-08, PR-09, PR-10 |
 | `reference/local.md` — the local card: deadlines that also stop child processes, source identity | PR-04, PR-06, PR-07 |
 | `reference/colab-official.md` — the official Colab tools: owned sessions, release, what is unknown | PR-02, PR-07, PR-10 |
 | `reference/mailbox.md` — the legacy Colab runner through a git branch: kept for existing users, opt-in as its own route, not offered or tested in the first beta | PR-06, PR-10, PR-12, PR-14 |
 
-Campaign records go to `meet-runs/campaigns/<campaign>/`, separate from `meet-runs/jobs/` used by
-exports, so the two never collide.
+Campaign records go to `meet-runs/campaigns/<campaign>/`. Mailbox exports keep `meet-runs/<job>/`;
+job names are sortable ids (`s01_bench`), so the reserved name `campaigns` is never a job.
+
+**Output labels.** Without the referee (arm B0, and every route today) a result is labelled
+**instruction-only — not referee-checked**, whatever the agent observed. Only the referee's own
+output may carry a referee verdict; public pages never present a B0 result as B1.
 
 ### 1.3 The referee (arm B1)
 
-The referee is one small command the agent calls instead of judging results itself. It:
+The referee is one small command the agent calls instead of judging results itself. **It does not
+exist yet**, and it is built only after the steps of §9.1 show a gap that existing harnesses and the
+instructions alone leave open.
 
-1. **pins the oracle before the campaign** — the correctness command and its files and inputs by
-   hash, approved by the user (prefer the project's existing tests, a reference implementation or
-   known exact results; the agent may propose an oracle, the user approves it);
-2. **runs it itself** for every candidate, on the declared inputs **and on held-out inputs the agent
-   never saw**, and records the exit status — the agent never transcribes a verdict. Held-out inputs
-   come from one of three sources, chosen when the campaign is approved:
-   - an **input spec** the user approves with the oracle (shapes and their constraints, dtypes,
-     layout, aliasing, tolerance, and optionally a **performance bound** — FLOPs and bytes per call,
-     from which a physical floor on run time follows for the GPU) — the referee draws held-out cases from it with a fresh random seed
-     **after** the candidate is frozen, so there is nothing to read in advance;
-   - the user's **own hidden cases**, kept outside the repository;
-   - neither: then the result can reach only the lower verdict level below, and says so.
-   Preparing the spec or cases is oracle work; its time is measured and reported (PR-17);
-3. **times fairly** — fresh inputs per timed run, synchronized device timing, repeats with spread,
-   baseline re-measured in the same session on the same GPU, nothing else on the GPU;
-4. **refuses a verified winner** for any entry of the exploit catalogue below, and gives one of
-   three verdicts: `VERIFIED` (declared and held-out inputs pass, fair timing, no catalogue hit),
-   `PASSED_DECLARED_ONLY` (no held-out source — never reported as verified), or
-   `INSUFFICIENT_EVIDENCE`;
-5. **keeps the search honest** — a candidate whose **normalised** source (comments, whitespace and
-   formatting removed) matches an earlier one is flagged and not re-run; an early stop is accepted
-   only with measured evidence — the last *k* candidates within the timing noise of the best, or, where
-   a bound is known, the best within a declared fraction of it — not with a typed reason;
-6. writes the records (§1.2) and the source identity of every run, or marks it *dirty / unverified*.
+**One adapter contract, not arbitrary repositories.** An existing test command need not expose a
+callable kernel, input injection, synchronization, reference outputs, tolerances, aliasing or state
+reset, so the first referee supports exactly one kind of target: **one deterministic GPU operator**
+(CUDA, Triton or a PyTorch extension) with
 
-**Exploit catalogue** — each item is a fault-injection test the referee must pass, and the list is
-maintained as new ones are published: hard-coded or constant outputs; outputs cached across
-iterations or keyed on input identity; skipped computation that still passes the declared inputs;
-tuning to a single shape; a stale or weakened baseline; precision silently lowered beyond the stated
-tolerance; an edited oracle, input file or referee; a dirty working tree; a timed-out or orphaned
-process; noisy or throttled timing; timer manipulation; physically impossible results (checked only
-when the spec gives a bound — otherwise the result says the check was skipped). Items that need the
-**tamper-resistant mode** of §1.1 are marked as such: a *deliberate* edit of the oracle, its inputs
-or the referee by the agent. In default mode only *accidental* edits of these are detected. Where
-existing integrity checks fit — KernelBench-Verified's checks, KernelGuard-style physics floors —
-the referee reuses them rather than reinventing them. Its own overhead against native execution is
+- a **trusted reference** — an existing implementation or the project's reference path;
+- a **callable candidate** with the same signature;
+- an **input spec** — shapes and their constraints, dtypes, layout, aliasing, tolerance;
+- a **timing semantic** — cold, warm or steady-state, declared separately (below);
+- a way to **reset state** between calls if the operator has any.
+
+Where a project's own harness already provides these, the referee drives that harness instead.
+Stateful, multi-operator, non-deterministic or otherwise unsupported targets get
+`PASSED_DECLARED_ONLY` or `INSUFFICIENT_EVIDENCE` — never invented coverage. Adapter and oracle
+preparation minutes are measured (PR-17).
+
+**What the referee does, in one trusted harness** — it owns invocation, input creation, output
+validation and timing, so correctness and speed refer to **the same computation**:
+
+1. **pins** the reference, the input spec, the tolerance and the candidate's identity before the
+   check, approved by the user;
+2. **creates the inputs itself**: the declared cases, plus held-out cases drawn from the spec with a
+   seed chosen **after** the candidate is frozen — this hides them from development, not from the
+   candidate's own code at run time, which is why the trust mode matters (§1.1); or the user's own
+   hidden cases kept outside the repository;
+3. **invokes the candidate itself**, compares its outputs with the reference within tolerance, and
+   **times that same invocation** with synchronized device timing or an explicit end-to-end metric,
+   a fixed warm-up and independent repeats with spread, against a baseline measured the same way in
+   the same session on the same GPU; numbers reported by the candidate or transcribed by the agent
+   are never used; what the harness cannot observe is reported as unknown;
+4. **times by the declared semantic**: inputs are randomised **outside** the timed phase unless setup
+   is part of the metric; cold, warm and steady-state results are never mixed; caching of
+   input-independent work, precomputation, fusion and different algorithms are legitimate and are
+   **not** rejected — results reused **across different inputs** are;
+5. **gives a scoped verdict**: `VERIFIED` (declared and held-out cases pass, timing protocol met, no
+   catalogue hit), `PASSED_DECLARED_ONLY` (no held-out cases), or `INSUFFICIENT_EVIDENCE`. Every
+   verdict carries its **scope** — the reference and input distribution, the cases tested, the
+   timing protocol and semantic, the environment (GPU, driver, flags), the trust mode, and the checks
+   it could not run. `VERIFIED` means *this evidence passed*, not *correct in general*;
+6. **records identity with context**: the raw content hash of the candidate **plus** its execution
+   context (compiler and flags, dependencies, inputs, GPU) — an exact repeat in the same context is a
+   hint to skip; the same source in another context may be retested; language-aware normalisation
+   is at most a hint, never authoritative;
+7. **treats the budget as a ceiling, not a target**: early stopping is the agent's and the user's
+   choice; it is only enforced when the user approved a specific stop rule; stops are recorded with
+   the budget left;
+8. writes the records (§1.2) and the source identity of every run, or marks it *dirty / unverified*.
+
+**Exploit catalogue** — each item is a fault-injection test the referee must pass, maintained as new
+ones are published: hard-coded or constant outputs; results reused across different inputs; skipped
+computation that still passes the declared inputs; tuning to a single shape; a stale or weakened
+baseline; asynchronous launch timed before completion; **timed and checked paths that differ**;
+precision lowered beyond the stated tolerance; an accidentally edited reference, input spec or
+referee; a dirty working tree; a timed-out or orphaned process; noisy or throttled timing; timer
+manipulation; physically impossible results — checked only against a **conservative, justified**
+bound given in the spec, otherwise reported as not checked. A *deliberate* edit by a same-user agent
+needs the tamper-resistant mode of §1.1, which is **not part of the first beta**. Legitimate
+optimisations (above) are part of the **false-reject** tests. Where existing integrity checks fit —
+KernelBench-Verified's checks, KernelGuard-style rules — the referee reuses them. Its own overhead is
 measured (PR-27).
 
 ### 1.4 What exists today
@@ -174,12 +212,13 @@ measured (PR-27).
 |---|---|
 | Local card, following the skill | **instructions only** — no referee yet; results are as reliable as the agent |
 | Official Colab CLI / skill underneath | **instructions only, not yet tried** |
-| The referee (B1) | **not shipped** — the first thing to build (§9) |
+| The referee (B1) | **not shipped**; built only if §9.1 shows a gap |
 | Mailbox route (Colab notebook runner through a git branch) | **working and tested**: exact commit, deadlines, telemetry, history — a legacy route, not part of the first beta |
 | Core components (journal, lifecycle, policy broker) | **not built**; conditional on evidence (§9) |
 
-Public pages describe these statuses as they are; no unsupported capability is claimed. Until the
-referee exists, the product as defined here does not exist, and nothing may be claimed for it.
+Public pages describe these statuses as they are; no unsupported capability is claimed. Every result
+today is **instruction-only — not referee-checked** (§1.2). Until the referee exists, the product as
+defined here does not exist, and nothing may be claimed for it.
 
 ## 2. The problem
 
@@ -267,25 +306,29 @@ or stops (§9).
 
 ## 5. Target workflow: a verified optimization campaign
 
-> *"Make my fused attention kernel faster on my GPU without breaking it. Use our tests. Two hours."*
+> *"Make my fused attention operator faster on my GPU without breaking it. Use the reference
+> implementation. Two hours at most."*
 
-1. The agent states the campaign: objective metric, baseline, oracle, GPU and route, limits, stop
-   conditions (PR-22). The user approves the campaign and the **oracle** once (PR-07, PR-05).
-2. The referee pins the oracle, its inputs and the baseline measurement (§1.3).
+1. The agent states the campaign: objective metric and timing semantic, baseline, reference, input
+   spec, GPU and route, limits as ceilings, any stop rule (PR-22). The user approves it once
+   (PR-07, PR-05).
+2. The referee pins the reference, spec and baseline measurement (§1.3); a target outside the
+   adapter contract is told so before any run.
 3. The agent checks the records for what was already tried (PR-23).
-4. It proposes and builds variants; **the referee** runs the oracle on declared and held-out inputs
-   and times them; failures are rejected whatever their speed (PR-05). Runs are sequential on one GPU
-   by default (PR-11).
-5. The agent proposes the next round from the referee's results; an early stop needs measured
-   evidence (§1.3).
+4. It proposes and builds variants; **the referee** invokes, checks and times each one on declared
+   and held-out inputs; failures are rejected whatever their speed (PR-05). Runs are sequential on
+   one GPU (PR-11).
+5. The agent proposes the next round from the referee's results, or stops; the budget is a ceiling
+   (§1.3).
 6. On a stop condition, the referee re-runs the finalist and the baseline in one matched session and
    names the winner — or "no verified improvement" (PR-05, PR-20).
-7. The user gets the verified result, the evidence, what was rejected and why, the cleanup state and
-   the cost where known (PR-07, PR-25).
+7. The user gets a plain summary — the verdict and its scope, the speed-up with spread, what was
+   rejected and why, the cleanup state, the cost where known — without reading any schema
+   (PR-07, PR-25).
 
-**The smallest campaign that tests the promise** (the first beta's scope): one GPU, one kernel in a
-project with an existing correctness check, a baseline and 3–5 variants, one approval, the referee,
-and one follow-up session with a fresh agent context that must find what was tried.
+**The smallest campaign that tests the promise** (the first beta's scope): one GPU, one operator that
+fits the adapter contract, a baseline and 3–5 variants, one approval, the referee, and one follow-up
+session with a fresh agent context that must find what was tried.
 
 ## 6. Requirements
 
@@ -300,7 +343,7 @@ The list is closed: new needs come from design partners.
 | **PR-02** | **Official tools underneath.** Use provider CLIs and sign-ins; never re-implement vendor auth or transport; install adapters only with consent. | Must | Native | no own auth for Colab/SSH; adapter install asks first |
 | **PR-03** | **The user chooses the GPU.** No implicit provider, route or destination switch — a different route needs its own approval; the GPU is shown on every result. | Must | Skill + Helper | no run on an unapproved GPU or route |
 | **PR-04** | **Quick Run.** "Run this on my GPU" with minimal metadata, keeping deadlines and source identity. | Should | Skill + Native | a quick run needs only the script |
-| **PR-05** | **The referee decides correctness.** The oracle — preferably the project's existing tests or a reference — is approved by the user, pinned by hash, run by code on declared **and held-out** inputs (from an approved spec drawn after the candidate is frozen, or the user's hidden cases); fresh inputs per timed run; baseline re-measured in the same session; verdict levels `VERIFIED` / `PASSED_DECLARED_ONLY` / `INSUFFICIENT_EVIDENCE`; no verified-winner claim for any entry of the exploit catalogue (§1.3). | Must | Helper | every catalogue injection is rejected; the external re-check of §9 finds no false winner; the false-reject rate stays within target |
+| **PR-05** | **The referee decides correctness, within a stated scope.** For a target that fits the adapter contract (§1.3): reference, input spec and tolerance approved and pinned; inputs created, candidate invoked, outputs checked and **the same invocation timed** by the referee; held-out cases drawn after the candidate is frozen or supplied hidden by the user; declared timing semantic; baseline measured the same way in the same session; verdicts `VERIFIED` / `PASSED_DECLARED_ONLY` / `INSUFFICIENT_EVIDENCE`, each with its scope; no `VERIFIED` for any catalogue entry. | Must | Helper | every catalogue injection is rejected; legitimate optimisations are not; the external re-check of §9 finds no false winner |
 | **PR-06** | **Exact source.** Every run records the commit it ran, or is marked dirty / unverified and never presented as that commit. | Must | Helper | a dirty tree is never reported as a commit |
 | **PR-07** | **Paid compute is safe by default.** Default deny, approvals, deadlines, bounded session hold; fails closed where a mandatory safety property is unsupported; owned sessions released with evidence, borrowed ones left to the user and said so; no monetary cap promised without provider enforcement. | Must | Native + Helper | no paid acquire without approval; no unbounded hold |
 | **PR-08** | **No new credential burden.** Reuse official sign-ins; never tokens in chat, config or repo. The legacy mailbox needs a GitHub token stored in Colab: this is stated wherever it is offered, and it is not part of the first beta. | Must | Native | the beta routes need no new credential |
@@ -310,19 +353,19 @@ The list is closed: new needs come from design partners.
 | **PR-12** | **Few tokens.** Compact verdicts from the referee, bounded log excerpts; raw evidence on request. | Should | Skill + Helper | tokens reported per campaign |
 | **PR-13** | **Results people can read.** Optional reports and charts made outside the agent's context. | Could | Helper | reports cost the agent no tokens |
 | **PR-14** | **Telemetry levels.** Simple · Standard · Deep (opt-in); throttling and shared-GPU flags feed the referee's timing rules. | Should | Helper | a throttled run is not compared |
-| **PR-15** | **Works with existing projects unchanged.** | Must | Skill | a partner's repository runs as is |
+| **PR-15** | **Works with existing projects without restructuring them.** A project whose operator fits the adapter contract needs only a small adapter, or none if its own harness provides the contract; other projects are told clearly what is unsupported. | Must | Skill | an independent user integrates a representative operator; an unsupported project fails clearly |
 | **PR-16** | **No lock-in.** MIT, plain JSON/JSONL/CSV records, no hosted service. | Should | Helper | everything is readable without MeetProxy |
-| **PR-17** | **Minutes to a first verified result.** Read-only discovery; oracle preparation time reported, not hidden. | Must | Skill | time to first verified result measured |
+| **PR-17** | **Minutes to a first checked result.** Read-only discovery; adapter and oracle preparation counted, not hidden. Target for a supported operator: **≤ 60 minutes of active user time cold**, ≤ 5 minutes for each later campaign on it. | Must | Skill | cold and repeat times measured against the target |
 | **PR-18** | **Honest support.** Supported means tested; untested routes say so. | Must | Skill + tests | every listed route has a passing smoke test or an "untested" label |
 | **PR-19** | **Integrate, don't replace.** Runs under existing agent loops and execution tools; exports into existing trackers. | Should | Native | the referee works inside one existing loop |
 | **PR-20** | **Evidence before claims.** Benefits claimed only after the pre-registered test of §9, all runs published, supported and unsupported cases separated. | Must | Validation | test published; decision recorded |
 | **PR-21** | **Compute cost per verified result.** Start-up, idle and failures included; unknowns disclosed. | Could | Helper | estimate vs actual reported |
 | **PR-22** | **Optimization campaigns.** Objective, baseline, oracle, limits, variants, stop conditions and final evidence as one object; the agent reasons, the referee decides. | Must | Skill + Helper | a campaign ends with a verified result or "no verified improvement" |
-| **PR-23** | **Do not repeat what failed.** Records of variants, normalised-source hashes, results and rejection reasons, readable by a fresh session; a repeat is a suggestion to skip, not a ban — a justified retest is allowed. | Must | Skill + Helper | a fresh session skips a reformatted copy of a recorded failed variant |
+| **PR-23** | **Do not repeat what failed.** Records of variants with raw content hash plus execution context, results and rejection reasons, readable by a fresh session; an exact repeat in the same context is a hint to skip, not a ban — the same source with other flags, inputs or GPU may be retested. | Must | Skill + Helper | a fresh session skips an exact repeat and is allowed a retest in a changed context |
 | **PR-24** | **Resource recommendations.** Suggest which approved GPU fits a run. | Deferred | Skill | — |
 | **PR-25** | **Total cost includes the agent.** Agent tokens and model cost where the host reports them. | Should | Helper | campaign report shows compute and agent cost where known |
 | **PR-26** | **Adoption is measured — with consent.** Time to first verified result, activation, repeat use, reasons for leaving; opt-in only. | Should | Validation | counts reported with denominators |
-| **PR-27** | **Low overhead.** The referee's overhead against native execution measured separately for setup and per run. | Should | Helper | overhead reported per campaign |
+| **PR-27** | **Evidence is worth its cost.** Cold setup, each later run, validation overhead and human review time measured; a break-even per workload is declared before the test (§9). | Should | Helper | measured cost vs the declared break-even |
 | **PR-28** | **Portable experiment definitions.** A campaign states its requirements so it can move between GPUs. | Deferred | Skill + Helper | — |
 | **PR-29** | **Extensible backends.** A documented backend contract with contract tests. | Deferred | Core if needed | — |
 
@@ -370,146 +413,160 @@ evidence**: each objection is *unvalidated* until its check passes with real use
 | Differentiator | Value | Boundary |
 |---|---|---|
 | **Enforced referee** (lead) | no false winners from the exploit catalogue: oracle pinned and run by code, held-out inputs drawn after the candidate is frozen (PR-05) | default mode detects accidental edits only; tamper resistance needs an external anchor (§1.1) |
-| **Search that does not stop at the first win** (secondary) | early stops need measured evidence; anti-repeat on normalised source (PR-22, PR-23) | supported by one study only (§2); the agent still chooses what to try |
+| **Search records** (secondary) | exact repeats in the same context flagged; stops recorded with budget left (PR-22, PR-23) | budget is a ceiling; stopping early can be rational; supported by one study only (§2) |
 | **Works under existing loops and tools** | verification added without changing the loop or the execution route (PR-19, PR-02) | only tested combinations listed (PR-18) |
 | **Honest status** | every route labelled as it is (§1.4) | — |
 
 ## 9. Success metrics and the test that decides
 
-Margins and counting rules below are fixed **before the first run**; a change is allowed only before
-then and is recorded with its date. Every number is reported with its denominator.
+Margins, units and counting rules below are fixed **before the first run**; a change is allowed only
+before then and is recorded with its date. Every number is reported with its denominator. This test
+is an **exploratory pilot**: it can justify building or stopping, never a public validation claim.
 
-**Budget** means the same model, the same token cap, the same GPU, the same wall-clock cap and the
-same task in every arm. **Everything the referee runs — held-out checks, repeats, matched re-runs —
-counts against B1's budget.** For execution tests the candidate set is also the same.
+### 9.1 Order — nothing is built before the previous step says so
 
-**The re-check is external, so the referee does not grade itself.** After each campaign, every
-arm's claimed winner — B1's included — is judged by an oracle MeetProxy's author did not build:
+1. **Discovery** with strangers (§10): their recent real benchmark, their current workaround, their
+   incidents. Stop if the demand gate fails.
+2. **Existing harness and the pure skill first.** On one real operator from a partner, try an
+   existing integrity harness (KernelBench-Verified's checks, AgentKernelArena's held-out
+   evaluation, a project's own harness) and the skill alone (B0). Record each tool's exact version,
+   licence and compatibility, integration time, checks reused, and the **smallest remaining gap**.
+   If existing tooling or B0 closes the gap: wrap it, contribute the missing check upstream, publish
+   the skill — and stop.
+3. **Only if a concrete gap remains**, prototype a small local referee for the adapter contract of
+   §1.3 and freeze that contract.
+4. **Protocol dry run**: one complete pass of §9.2–9.4 on one task with one reviewer, logging
+   reviewer workload and cost, before the full cohort is recruited.
+5. **The seeded test** (§9.3–9.4), then **independent repeat-use trials**. Stop or narrow if users
+   do not return. No transport, experiment database or provider adapter is built for any of this.
 
-1. the partner's own **hidden tests, written after the campaign** without seeing the candidates —
-   not blind to the workload, since the partner watched the campaigns, which is why it is never the
-   only check;
-2. a **third-party harness** where the kernel fits one (e.g. KernelBench-Verified's checks); and
-3. **blinded expert review** of **every** claimed winner and a random sample of rejects, the
-   reviewer not told which arm or verdict produced them — at least two reviewers per partner, GPU
-   kernel practitioners with no stake in MeetProxy and no part in writing the referee or the
-   exploit set, named in the pre-registration before the first run; disagreements are reported.
+### 9.2 Budget, re-check and reviewers
 
-A claimed winner that fails any of these is a **false winner**. The referee's verdicts are compared
-with this external judgement, in both directions.
+**Budget** means the same model, token cap, GPU, wall-clock cap and task in every arm, as a
+**ceiling**. Everything the referee runs — held-out checks, repeats, matched re-runs — counts against
+B1's budget. Every arm starts from a clean agent context; candidates carry blinded ids.
 
-**False rejects.** A referee that rejects everything would score zero false winners. So each
-partner's candidate pool is seeded with **known-good speed-ups** (variants the partner or a
-reference implementation shows to be correct and faster) and **the held-out exploit set** described
-below; the referee's rejection of a known-good variant is a false reject.
+**The re-check is external, so the referee does not grade itself.** Every arm's claimed winner — B1's
+included — is judged by an oracle MeetProxy's author did not build:
+
+1. the partner's own **hidden tests, written after the campaign** without seeing the candidates — not
+   blind to the workload, since the partner watched the campaigns, so never the only check;
+2. a **third-party harness** where the operator fits one; and
+3. **blinded expert review** of every claimed winner and a random sample of rejects — at least two
+   reviewers per partner, GPU practitioners with no stake in MeetProxy and no part in the referee or
+   the exploit set, named and **budgeted** (hours and payment) in the pre-registration.
+
+How reviewer disagreements, harnesses that do not fit an operator, and partners who do not finish
+affect the outcome is pre-registered. A claimed winner that fails any check is a **false winner**.
+
+### 9.3 Seeded candidates and metrics
+
+Each partner's frozen candidate pool holds their real candidates plus:
+
+- **planted bad candidates** from a **held-out exploit set**, authored by someone who did not write
+  the referee, from published cases and their own ideas, fixed before the referee is frozen and
+  before any partner workflow is seen; at least 2 per exploit family used, including families not in
+  the catalogue (reported separately). Catalogue exploits are the referee's development set and
+  never decide anything;
+- **known-good candidates**: correct and faster variants from a shared pool of public reference
+  operators plus at most 2 certified per partner, **including legitimate caching, precomputation,
+  fusion and alternative algorithms**.
+
+The same candidates are paired across arms. **Units:** a candidate for eligibility metrics, a
+campaign for outcome metrics. **Clusters:** results are reported per operator and per exploit family;
+families are weighted equally. **Intervals:** exact (Clopper–Pearson) one-sided 95% upper bounds.
+**Zero observed is not zero risk:** 0 errors in 20 independent cases still allows up to about 14%.
 
 | Metric | Definition | Target |
 |---|---|---|
-| **False-winner rate** (primary) | claimed winners that fail the external re-check ÷ claimed winners | B1: 0 · A and B0: reported |
-| **False-reject rate** (co-primary) | known-good speed-ups the referee rejects ÷ known-good speed-ups; at least 20 seeded known-good variants across the test, reported with a 95% interval | observed ≤ 10%, upper bound ≤ 25% |
-| **Held-out exploit acceptance** (deciding) | exploits from the held-out set that an arm's process reports as its winner ÷ held-out exploits, per arm; classes outside the catalogue reported separately | B1: 0 |
-| **Verified speed-up** (primary) | geometric-mean speed-up of winners that pass the external re-check vs the baseline, same budget; a campaign without one scores 1.0 | see GO routes |
-| Active human minutes | pre-registered counting rules (approvals, interventions, reading results) | reported |
-| Early stops (secondary) | campaigns that stop with > 25% of budget left without the measured evidence of §1.3 | reported per arm |
-| Repeats (secondary) | candidates whose normalised source matches an earlier one | reported per arm |
-| Oracle preparation | partner minutes to approve an oracle and an input spec or hidden cases | reported |
-| Time to first verified result | cold, from install | reported, oracle preparation separate |
-| Referee overhead | per run and setup, vs native execution | reported |
-| Tokens per campaign | same model and task | reported; no target before a baseline exists |
-| Repeat use | partners who return unprompted for a real task within two weeks | counts; percentages only with ≥ 50 activated users |
+| **Eligibility error on planted bad candidates** (deciding) | planted bad candidates an arm's process marks as eligible to win ÷ planted bad candidates it evaluated; abstentions and missing checks reported separately | B1: 0, with its upper bound stated |
+| **False-reject rate** (co-primary) | known-good candidates the referee marks ineligible ÷ known-good candidates evaluated; at least 20 | upper bound ≤ 25% (at 20 cases: at most 1 reject) |
+| **False-winner frequency** (end-to-end) | campaigns whose final winner fails the external re-check ÷ campaigns | B1: 0 · others reported |
+| **Verified speed-up** | geometric-mean speed-up of winners that pass the external re-check vs the baseline; a campaign without one scores 1.0 | see GO routes |
+| Active human minutes | pre-registered counting rules | reported |
+| **Cost of evidence** | cold setup, adapter and oracle preparation, each later run, validation overhead, review minutes | against the declared break-even |
+| Cold first checked result | from install, supported operator | ≤ 60 active minutes (PR-17) |
+| Stops | campaigns ending with budget left, user-authorised rule vs agent's choice | reported, not penalised |
+| Exact repeats | same content hash in the same execution context | reported |
+| Tokens per campaign | same model and task | reported |
+| Repeat use | partners who return unprompted for a real task within two weeks | counts |
 
-**Arms** — safety constraints apply in every arm:
+A synthetic pool of ten planted bad candidates, four wrongly marked eligible and one chosen as the
+winner, reports **40%** eligibility error and **one** false-winner campaign — not 10%.
+
+**Break-even per workload**, declared before the test: the runtime the verified speed-up saves times
+the expected number of uses, against the cost of evidence above. A verified speed-up that costs more
+to establish than it saves is reported as such.
+
+### 9.4 Arms, design, decisions
 
 | Arm | What is tested |
 |---|---|
 | **A · the user's real workflow** | their agent, scripts, tests and notes — never a deliberately weak baseline |
+| **A+ · existing harness + short prompt** | the best existing integrity harness that fits (step 2 of §9.1) with a short instruction — the cheapest strong competitor |
 | **B0 · the skill alone** | MeetProxy instructions, plain files, native execution |
-| **B1 · the skill + referee** | the same instructions plus the referee of §1.3 |
+| **B1 · the skill + referee** | the same instructions plus the referee of §1.3, default trust mode |
 | **C · B1 + one component** | only after a recurring failure B1 cannot solve |
 
-**Design.** At least 5 partners and at least **3 campaigns per arm per partner**; arm order
-counterbalanced across partners (half start with A); for the false-winner decision every arm
-verifies the **same frozen candidate pool** per partner — the partner's real candidates plus the
-seeded known-good variants and exploits —, so prior knowledge from an earlier arm cannot help; open
-search outcomes (route 2) are reported separately from these execution tests. **B1 runs in default
-mode**, the mode users would get: a deliberate edit of the referee by the agent is not prevented
-there, but it cannot hide from the external re-check — any false winner it produces counts against
-B1.
+**Design.** At least 5 partners and at least 3 campaigns per arm per partner; arm order balanced as
+closely as five partners allow (3/2), stated with the results; open search outcomes reported apart
+from the frozen-pool execution tests. Frozen pools reduce carry-over of ideas, not of reviewer or
+agent learning; that limit is stated. Partners are told that planted candidates exist, not how many
+or which — this makes arm A more careful than usual, which works against MeetProxy.
 
-**Seeded exploits — a held-out set.** The exploits that decide route 1 are authored or adapted by
-someone who did not write the referee, from published cases (§2 sources) and their own ideas, kept
-out of referee development and fixed **before the referee is frozen** and before any partner's
-workflow is seen; at least 2 per class used, including classes **not** in the catalogue, reported
-separately. Exploits from the catalogue itself are the referee's development set: they are run, but
-never decide anything.
+**Power.** Natural false winners are rare: with about 30 non-seeded A and B0 campaigns and a
+per-campaign rate of 2%, 5% or 10%, the chance of seeing at least one is about 45%, 79% or 96%. The
+natural count is exploratory; the seeded test decides route 1.
 
-**Acceptance per arm** means the arm's process reports the candidate as its winner. Partners are
-told the pool contains planted candidates, not how many or which; this probably makes arm A more
-careful than usual, which works against MeetProxy and is stated with the results. **Known-good variants** come from a shared pool of public reference kernels
-plus at most 2 certified by each partner, to keep partner effort down.
+**Partner effort and fallback.** About 5–9 hours per partner (interview 0.5 h; adapter, spec or hidden
+cases 1–2 h; 15–30 active minutes per campaign; hidden tests about 1 h; review 0.5 h), disclosed
+before they agree. The incentive is fixed before recruitment: at least the GPU time used, plus a
+thank-you payment or credit whose amount is **an open decision for the author**. Fewer than 5
+complete partners → case studies and ITERATE, never GO.
 
-**Power.** Natural false winners are rare events. With about 30 non-seeded A and B0 campaigns
-(5 × 3 × 2) and a per-campaign false-winner rate of 2%, 5% or 10%, the chance of seeing at least 3
-is about 2%, 19% or 59%, and of seeing at least 1 about 45%, 79% or 96%. So the **natural count
-cannot decide at this size**: it is exploratory and reported with its denominator. The **seeded
-execution test decides route 1**, and the natural count says whether the problem is real for these
-users.
+**GO routes** (B1 against each of A, A+ and B0), each with the false-reject bound met:
 
-**Partner effort and fallback.** Estimated per partner: interview 0.5 h; oracle and input spec or
-hidden cases 1–2 h; about 15–30 active minutes per campaign × 9 campaigns; hidden tests after the
-campaigns about 1 h; review 0.5 h — **about 5–9 hours**. Partners are told this before agreeing.
-The incentive is fixed before recruitment: at least the GPU time the test uses, plus a thank-you
-payment or compute credit whose amount is **an open decision for the author** (5–9 hours of skilled
-work is worth more than GPU time alone); partners keep the referee's findings on their own kernel.
-Without a meaningful incentive, fewer completions are expected, and the case-study fallback applies. If fewer
-than 5 partners complete, the results are published as case studies and the decision is ITERATE,
-never GO.
-
-**GO routes** (B1 against A, and B1 against B0), each with the false-reject rate within target:
-
-1. **Fewer false winners** — on the held-out exploit set, B1 accepts none while A or B0 accepts at
-   least a third; **and** at least one natural false winner appears in A or B0 **during the test**;
-   B1 has no false winner by the external re-check; and B1's verified speed-up is not lower than
-   theirs by more than 5% (ratio ≥ 0.95). Without a natural false winner in the test, a seeded-only
-   result is at most a **conditional GO** — the problem is shown real only by interviews — and the
-   follow-up is a longer observation of partners' own work before anything else is built; or
-2. **Better verified outcome** — B1's verified speed-up is at least 10% higher (ratio ≥ 1.10) with
-   a false-winner rate no worse; or
-3. **Same outcome, less supervision** — verified speed-up ratio ≥ 0.95 and at least 50% fewer active
-   human minutes.
+1. **Fewer false winners** — B1's eligibility error on the held-out planted set is 0 while the other
+   arm's is at least one third, **and** at least one natural false winner appears in that arm during
+   the test, and B1's verified speed-up ratio is ≥ 0.95. Without a natural false winner it is at most a
+   **conditional GO**: it justifies a longer observation of partners' own work, not a launch; or
+2. **Better verified outcome** — verified speed-up ratio ≥ 1.10 with false-winner frequency no worse;
+   or
+3. **Same outcome, less supervision** — ratio ≥ 0.95 and at least 50% fewer active human minutes.
 
 **Decisions:**
 
-- **GO B1** — a GO route holds against A *and* against B0, the false-reject rate is within target,
-  and at least 2 partners outside the author's circle return unprompted → ship the skill with the
-  referee.
-- **GO B0** — B0 matches B1 on every route → the instructions are the product: publish them free and
-  stop building code.
+- **GO B1** — a route holds against A, A+ **and** B0, the cost of evidence is under break-even for
+  the partners' workloads, and at least 2 partners outside the author's circle return unprompted →
+  ship the skill with the referee.
+- **Wrap** — A+ matches B1 → wrap or contribute to the existing harness; no own referee.
+- **GO B0** — B0 matches B1 → publish the instructions free; no code.
 - **GO C** — B1 fails on a named recurring problem and one component fixes it → build only that.
-- **STOP or narrow** — A already has no false winners and B1 adds no route, switching costs dominate,
-  or partners do not return. The mailbox stays as a specialised tool if it is still useful.
+- **STOP or narrow** — the incumbent already catches the planted candidates and no natural false
+  winner appears, switching costs dominate, or partners do not return. The mailbox stays as a
+  specialised tool if it is still useful.
 
-If A's winners also survive the re-check and A's own checks already reject the seeded exploits, the
-referee adds nothing for that user: a STOP signal, not a reason to add features. No new backend follows from any result of this test. The recruitment
-targets (5 recruits, ≥ 3 real tasks, ≥ 2 unprompted returns) are exploratory signals, not proof of
-product–market fit.
+No new backend follows from any result of this test. The recruitment targets (5 recruits, ≥ 3 real
+tasks, ≥ 2 unprompted returns) are exploratory signals, not proof of product–market fit.
 
 ## 10. Reaching users
 
-- **Design partners now** (before more infrastructure): 5 people from the segment of §3, recruited
+- **Discovery first** (§9.1, step 1): short interviews with people from the segment of §3, recruited
   **outside the author's circle** — GPU-programming communities, users of agent kernel skills, kernel
-  contest participants working on their own code. First an interview about their last real
-  optimization, without mentioning MeetProxy. **Demand gate:** at least 3 of 5 describe, unprompted,
-  a **concrete incident** in their own code — a claimed speed-up later found wrong, and what
-  revealed it (a failing test, another input, a reviewer, production); a general feeling of
-  distrust does not count. If fewer do, the problem of §2 is not theirs and the test of §9 does not
-  start. The author's own
-  research projects are dogfooding, never evidence.
-- **Acquisition, only after GO:** the published test with raw data, the exploit catalogue as a public
-  reference, the free skill. Conversion measured from visit to first verified result (PR-26).
-- **Money:** none. The skill and the referee are free and open; correctness and safety are never
-  paid features. There is no paid tier in this product; any paid offering would be a new product
-  decision made in this document, on evidence of demand.
+  contest participants working on their own code. Ask, without mentioning MeetProxy, for a recent
+  real benchmark, how they currently decide whether to believe a speed-up, and any incidents —
+  distinguishing how often, how costly, and whether the need is still unresolved. Record refusals.
+- **Demand gate:** at least 3 of 5 describe, unprompted, a **concrete incident** in their own code — a
+  claimed speed-up later found wrong, and what revealed it — **and** say their current workaround is
+  not good enough. A general feeling of distrust, or an incident already solved, does not count. If
+  fewer do, the problem of §2 is not theirs and nothing further is built.
+- **Before any code beyond a prototype:** at least one independent user completes a small unassisted
+  trial of the check on their own code and can explain the concrete advantage over their current
+  workaround. The author's own research projects are dogfooding, never evidence.
+- **Acquisition, only after GO:** the published test with raw data, the exploit catalogue as a
+  public reference, the free skill. Conversion measured from visit to first checked result (PR-26).
+- **Money:** none. The skill and the referee are free and open; correctness and safety are never paid
+  features. Any paid offering would be a new product decision made in this document, on evidence.
 
 ## 11. Non-goals
 
@@ -531,12 +588,13 @@ likely each is to kill the product — after the precondition that the referee e
    code (§10)? No interview has happened yet; the only measured hacking rate comes from contests,
    which already have harnesses.
 2. **Natural base rate** — do partners' own workflows produce false winners outside contests, and do
-   their own checks already reject the held-out exploits? If not, STOP (§9).
+   their own checks already reject the planted candidates? If not, STOP (§9).
 3. **Recruitment** — will 5 skilled strangers spend 5–9 hours each? Fewer completions mean case
    studies and ITERATE.
-4. **An existing tool already does it** — can KernelBench-Verified's checks or AgentKernelArena's
-   held-out evaluation be pointed at a user's own repository? If so, wrap it or stop (§4).
-5. **Oracle cost** — will users write an input spec or hidden cases? If not, most results reach only
+4. **An existing tool already does it** — can an existing integrity harness, with a short prompt,
+   be pointed at a user's own operator (arm A+)? If so, wrap it or stop (§9.1).
+5. **Adapter and oracle cost** — do real operators fit the adapter contract, and will users write an
+   input spec or hidden cases within the 60-minute target? If not, most results reach only
    `PASSED_DECLARED_ONLY`, and the held-out value is empty in practice.
 6. **Generalisation** — does the referee reject the held-out exploits, including classes outside its
    catalogue, with false rejects within bound?
